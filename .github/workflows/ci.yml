@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Instalar deps
+        run: uv sync --all-extras --frozen
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Tipos
+        run: uv run mypy
+      - name: Tests unitarios
+        run: uv run pytest -q
