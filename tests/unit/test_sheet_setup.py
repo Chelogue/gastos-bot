@@ -102,3 +102,17 @@ def test_ids_faltantes_quedan_vacios_para_completar() -> None:
     config = next(ws for ws in sh.worksheets() if ws.title == "Config")
     personas = {f[1]: (f[2], f[5]) for f in config.get_all_values()[1:] if f[0] == "persona"}
     assert personas["Marcelo"][0] == "" and "completar" in personas["Marcelo"][1]
+
+
+def test_completa_ids_vacios_sin_pisar_los_existentes() -> None:
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids={}, hoy=HOY)
+    r = asegurar_estructura(sh, telegram_ids={"Marcelo": 111}, hoy=HOY)
+    assert r.filas_agregadas == {"Config:Marcelo": 1}
+    config = next(ws for ws in sh.worksheets() if ws.title == "Config")
+    personas = {f[1]: (f[2], f[5]) for f in config.get_all_values()[1:] if f[0] == "persona"}
+    assert personas["Marcelo"] == ("111", "") and personas["Nikole"][0] == ""
+    r2 = asegurar_estructura(sh, telegram_ids={"Marcelo": 999, "Nikole": 222}, hoy=HOY)
+    assert r2.filas_agregadas == {"Config:Nikole": 1}
+    ids = {f[1]: f[2] for f in config.get_all_values()[1:] if f[0] == "persona"}
+    assert ids == {"Marcelo": "111", "Nikole": "222"}

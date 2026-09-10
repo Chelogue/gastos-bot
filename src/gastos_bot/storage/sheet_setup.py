@@ -85,6 +85,22 @@ def _sembrar_filas(
         resultado.filas_agregadas[titulo] = len(nuevas)
 
 
+def _completar_ids(ws: Any, telegram_ids: Mapping[str, int | None], resultado: Resultado) -> None:
+    """Rellena el telegram_id de las filas ``persona`` que están vacías. No pisa un ID existente."""
+    c_tipo, c_clave, c_valor = 0, 1, 2
+    for n, fila in enumerate(ws.get_all_values()[1:], start=2):
+        fila = list(fila) + [""] * (len(schema.CONFIG_COLUMNAS) - len(fila))
+        if fila[c_tipo] != schema.CONFIG_TIPO_PERSONA or fila[c_valor].strip():
+            continue
+        nuevo = telegram_ids.get(fila[c_clave])
+        if nuevo is None:
+            continue
+        fila[c_valor] = str(nuevo)
+        fila[5] = ""
+        ws.update(values=[fila[: len(schema.CONFIG_COLUMNAS)]], range_name=f"A{n}")
+        resultado.filas_agregadas[f"{schema.TAB_CONFIG}:{fila[c_clave]}"] = 1
+
+
 def _requests_orden_y_ocultas(sh: Any) -> list[dict[str, Any]]:
     titulos = _por_titulo(sh)
     meses = sorted(t for t in titulos if schema.es_pestana_de_mes(t))
@@ -251,6 +267,7 @@ def asegurar_estructura(
         titulo=schema.TAB_CONFIG,
         resultado=resultado,
     )
+    _completar_ids(config, telegram_ids, resultado)
     _sembrar_filas(
         categorias,
         list(schema.categorias_iniciales()),
