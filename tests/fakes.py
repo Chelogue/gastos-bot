@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any
 
 from telegram import Chat, Message, User
@@ -24,6 +25,8 @@ class FakeBot(ExtBot):  # type: ignore[type-arg]
         super().__init__(token="123:fake")
         # TelegramObject solo permite setear atributos que empiecen con "_".
         self._sent: list[dict[str, Any]] = []
+        self._edited: list[dict[str, Any]] = []
+        self._answered: list[dict[str, Any]] = []
         self._next_id = 1
 
     @property
@@ -37,6 +40,14 @@ class FakeBot(ExtBot):  # type: ignore[type-arg]
     async def shutdown(self) -> None:
         self._initialized = False
 
+    @property
+    def edited(self) -> list[dict[str, Any]]:
+        return self._edited
+
+    @property
+    def answered(self) -> list[dict[str, Any]]:
+        return self._answered
+
     async def send_message(
         self, chat_id: int | str, text: str, *args: Any, **kwargs: Any
     ) -> Message:
@@ -48,6 +59,22 @@ class FakeBot(ExtBot):  # type: ignore[type-arg]
             chat=Chat(id=int(chat_id), type=Chat.PRIVATE),
             text=text,
         )
+
+    async def edit_message_text(self, text: str, *args: Any, **kwargs: Any) -> Any:
+        self._edited.append({"text": text, **kwargs})
+        return True
+
+    async def get_file(self, file_id: str, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+        async def download_as_bytearray(*_a: Any, **_k: Any) -> bytearray:
+            return bytearray(b"imagen-" + file_id.encode())
+
+        return SimpleNamespace(file_id=file_id, download_as_bytearray=download_as_bytearray)
+
+    async def answer_callback_query(
+        self, callback_query_id: str, text: str | None = None, *args: Any, **kwargs: Any
+    ) -> bool:
+        self._answered.append({"id": callback_query_id, "text": text})
+        return True
 
 
 class FakeWorksheet:
@@ -283,3 +310,78 @@ class FakeDashboardRepo:
 
     async def recalcular(self, indicador: Indicador) -> None:
         self.recalculos.append(indicador)
+
+
+class FakeMensajero:
+    """Registra lo enviado/editado; ``archivos`` mapea file_id → bytes para ``descargar``."""
+
+    def __init__(self, archivos: dict[str, bytes] | None = None) -> None:
+        self.enviados: list[dict[str, Any]] = []
+        self.editados: list[dict[str, Any]] = []
+        self.archivos = archivos or {}
+        self._next_id = 100
+
+    async def enviar(
+        self, chat_id: int, texto: str, teclado: Any = None, *, force_reply: bool = False
+    ) -> int:
+        self._next_id += 1
+        self.enviados.append(
+            {
+                "chat_id": chat_id,
+                "texto": texto,
+                "teclado": teclado,
+                "force_reply": force_reply,
+                "message_id": self._next_id,
+            }
+        )
+        return self._next_id
+
+    async def editar(self, chat_id: int, message_id: int, texto: str, teclado: Any = None) -> None:
+        self.editados.append(
+            {"chat_id": chat_id, "message_id": message_id, "texto": texto, "teclado": teclado}
+        )
+
+    async def descargar(self, file_id: str) -> bytes:
+        return self.archivos.get(file_id, b"imagen-falsa")
+
+    @property
+    def ultimo_texto(self) -> str:
+        return str((self.editados or self.enviados)[-1]["texto"])
+
+    def ultimo_teclado_datos(self) -> list[str]:
+        teclado = (self.editados or self.enviados)[-1]["teclado"] or []
+        return [b.data for fila in teclado for b in fila]
+
+
+def flujo_factory_falso(*respuestas: Extraccion | Exception, config: Config | None = None) -> Any:
+    """Factory para build_application: Flujo con extractor y storage falsos, Mensajero real."""
+    from datetime import date
+    from decimal import Decimal
+
+    from gastos_bot.bot.flow import Flujo
+    from gastos_bot.domain.models import Moneda, Persona, TipoCambio
+    from gastos_bot.storage.factory import Storage
+
+    cfg = config or Config(
+        personas=(
+            Persona(nombre="Marcelo", telegram_id=111),
+            Persona(nombre="Nikole", telegram_id=222),
+        ),
+        tipos_de_cambio=(TipoCambio(mes=f"{date.today():%Y-%m}", valor=Decimal("40")),),
+    )  # fmt: skip
+    _ = Moneda
+    storage = Storage(
+        config=FakeConfigRepo(cfg),
+        categorias=FakeCategoriasRepo(),
+        gastos=FakeGastosRepo(),
+        pendientes=FakePendientesRepo(),
+        drive=FakeDriveRepo(),
+        dashboard=FakeDashboardRepo(),
+    )
+
+    def crear(mensajero: Any) -> Flujo:
+        extractor = FakeExtractor(*respuestas) if respuestas else FakeExtractor()
+        return Flujo(extractor=extractor, storage=storage, mensajero=mensajero)
+
+    crear.storage = storage  # type: ignore[attr-defined]
+    return crear

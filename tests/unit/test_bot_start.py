@@ -11,7 +11,7 @@ from gastos_bot.bot.app import build_application
 from gastos_bot.config import Settings
 from gastos_bot.main import create_app
 from tests.conftest import MARCELO_ID, NIKOLE_ID, WEBHOOK_SECRET
-from tests.fakes import FakeBot
+from tests.fakes import FakeBot, flujo_factory_falso
 
 DESCONOCIDO_ID = 333
 
@@ -40,7 +40,8 @@ def fake_bot() -> FakeBot:
 
 @pytest.fixture
 def client(settings: Settings, fake_bot: FakeBot) -> Iterator[TestClient]:
-    app = create_app(settings, application=build_application(settings, bot=fake_bot))
+    application = build_application(settings, bot=fake_bot, flujo_factory=flujo_factory_falso())
+    app = create_app(settings, application=application)
     with TestClient(app) as c:
         yield c
 
@@ -70,9 +71,9 @@ def test_grupo_recibe_silencio_aunque_sea_marcelo(client: TestClient, fake_bot: 
     assert fake_bot.sent == []
 
 
-def test_texto_sin_handler_no_rompe(client: TestClient, fake_bot: FakeBot) -> None:
+def test_texto_suelto_responde_solo_fotos(client: TestClient, fake_bot: FakeBot) -> None:
     assert _post(client, _update(4, MARCELO_ID, "hola")) == 200
-    assert fake_bot.sent == []
+    assert len(fake_bot.sent) == 1 and "fotos" in fake_bot.sent[0]["text"]
 
 
 def test_update_malformado_responde_200_sin_romper(client: TestClient, fake_bot: FakeBot) -> None:
