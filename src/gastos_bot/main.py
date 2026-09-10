@@ -18,6 +18,7 @@ from fastapi import Depends, FastAPI, Request, Response, status
 
 from gastos_bot import __version__
 from gastos_bot.auth import require_telegram_secret
+from gastos_bot.bot.app import BotApplication, build_application, process_payload
 from gastos_bot.config import Settings, get_settings
 from gastos_bot.logging_setup import configure_logging, get_logger
 
@@ -25,26 +26,39 @@ UpdateProcessor = Callable[[dict[str, Any]], Awaitable[None]]
 """Recibe el JSON crudo del update y lo procesa. El bot real lo provee en bot/app.py."""
 
 
-async def _ignore_update(_payload: dict[str, Any]) -> None:
-    """Procesador por defecto hasta que el bot se conecte (Fase 0, tarea 0.5)."""
-
-
 def create_app(
-    settings: Settings | None = None, processor: UpdateProcessor | None = None
+    settings: Settings | None = None,
+    processor: UpdateProcessor | None = None,
+    application: BotApplication | None = None,
 ) -> FastAPI:
+    """``processor`` reemplaza al bot entero (tests del HTTP); ``application`` permite inyectar
+    una Application con un Bot falso (tests del bot). En producción se construye todo real."""
     settings = settings or get_settings()
     log = get_logger("gastos_bot.main")
+
+    if processor is None:
+        application = application or build_application(settings)
+        bot_app = application
+
+        async def processor(payload: dict[str, Any]) -> None:
+            await process_payload(bot_app, payload)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging(settings.log_level, settings.log_format)
         log.info("arrancando", version=__version__, llm_provider=settings.llm_provider)
+        if application is not None:
+            await application.initialize()
+            await application.start()
         yield
+        if application is not None:
+            await application.stop()
+            await application.shutdown()
         log.info("apagando")
 
     app = FastAPI(title="gastos-bot", version=__version__, lifespan=lifespan, docs_url=None)
     app.state.settings = settings
-    app.state.process_update = processor or _ignore_update
+    app.state.process_update = processor
 
     @app.get("/health")
     async def health() -> dict[str, str]:
