@@ -36,7 +36,12 @@ class Storage:
 
 
 def crear_storage(settings: Settings) -> Storage:
-    creds = get_credentials(SCOPES_TODOS, settings.google_application_credentials)
+    token = settings.google_oauth_token_json
+    creds = get_credentials(
+        SCOPES_TODOS,
+        settings.google_application_credentials,
+        token.get_secret_value() if token else None,
+    )
     cliente = SheetsCliente.abrir(settings.google_sheet_id, creds)
     config = SheetsConfigRepo(cliente)
     return Storage(

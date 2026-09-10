@@ -74,3 +74,10 @@ def test_log_level_se_normaliza(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _settings(monkeypatch, LOG_LEVEL="debug").log_level == "DEBUG"
     with pytest.raises(ValidationError):
         _settings(monkeypatch, LOG_LEVEL="verbose")
+
+
+def test_token_oauth_opcional(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _settings(monkeypatch).google_oauth_token_json is None
+    s = _settings(monkeypatch, GOOGLE_OAUTH_TOKEN_JSON='{"refresh_token":"r"}')
+    assert s.google_oauth_token_json is not None
+    assert "refresh" not in repr(s)

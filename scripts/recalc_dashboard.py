@@ -28,6 +28,7 @@ class ScriptSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     google_sheet_id: str = ""
     google_application_credentials: str | None = None
+    google_oauth_token_json: str | None = None
 
 
 async def recalcular(cliente: SheetsCliente, meses: list[str]) -> list[str]:
@@ -68,7 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     if not sheet_id:
         print("Falta GOOGLE_SHEET_ID.", file=sys.stderr)
         return 2
-    creds = get_credentials(SCOPES_TODOS, settings.google_application_credentials)
+    creds = get_credentials(
+        SCOPES_TODOS, settings.google_application_credentials, settings.google_oauth_token_json
+    )
     cliente = SheetsCliente.abrir(sheet_id, creds)
     meses = (
         [args.mes]

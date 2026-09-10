@@ -30,6 +30,7 @@ class ScriptSettings(BaseSettings):
     google_sheet_id: str = ""
     google_drive_root_folder_id: str = ""
     google_application_credentials: str | None = None
+    google_oauth_token_json: str | None = None
 
 
 def parse_ids(raw: str | None) -> dict[str, int | None]:
@@ -57,7 +58,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Falta el ID del Sheet (--sheet-id o GOOGLE_SHEET_ID).", file=sys.stderr)
         return 2
 
-    creds = get_credentials(SCOPES_TODOS, settings.google_application_credentials)
+    creds = get_credentials(
+        SCOPES_TODOS, settings.google_application_credentials, settings.google_oauth_token_json
+    )
     sh = gspread.authorize(creds).open_by_key(sheet_id)
     resultado = asegurar_estructura(sh, telegram_ids=parse_ids(args.ids), hoy=date.today())
 

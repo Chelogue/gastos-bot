@@ -12,7 +12,7 @@
 #     Drive no usan IAM: hay que compartir el Sheet y la carpeta con su email como editor.
 #   - Repositorio Docker en Artifact Registry
 #   - Secretos vacíos (se cargan aparte, ver abajo): TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET,
-#     LLM_API_KEY
+#     LLM_API_KEY, GOOGLE_OAUTH_TOKEN_JSON (ADR 0006)
 #   - Workload Identity Federation para que GitHub Actions despliegue sin JSON keys, con una
 #     service account de deploy (gastos-bot-deployer) que puede subir imágenes y desplegar.
 #
@@ -60,7 +60,7 @@ if ! gcloud artifacts repositories describe "$AR_REPO" --location="$REGION" >/de
 fi
 
 say "Secretos"
-for s in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET LLM_API_KEY; do
+for s in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET LLM_API_KEY GOOGLE_OAUTH_TOKEN_JSON; do
   if ! gcloud secrets describe "$s" >/dev/null 2>&1; then
     gcloud secrets create "$s" --replication-policy=automatic --quiet
   fi

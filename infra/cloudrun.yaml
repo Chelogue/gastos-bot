@@ -56,3 +56,6 @@ spec:
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef: { name: LLM_API_KEY, key: latest }
+            - name: GOOGLE_OAUTH_TOKEN_JSON
+              valueFrom:
+                secretKeyRef: { name: GOOGLE_OAUTH_TOKEN_JSON, key: latest }

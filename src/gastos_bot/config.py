@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     google_sheet_id: str
     google_drive_root_folder_id: str
     google_application_credentials: str | None = None
+    google_oauth_token_json: SecretStr | None = Field(
+        default=None,
+        description="Credencial OAuth de Marcelo (JSON de usuario autorizado) para Drive y Sheets. "
+        "Ver ADR 0006 y scripts/autorizar_google.py.",
+    )
 
     # App
     tz: str = "America/Montevideo"
