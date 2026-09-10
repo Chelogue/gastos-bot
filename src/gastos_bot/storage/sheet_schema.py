@@ -8,6 +8,7 @@ requiere OK explícito (ver CLAUDE.md).
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
@@ -115,7 +116,7 @@ ConfigFila = tuple[str, str, str, str, str, str]
 
 
 def config_inicial(
-    telegram_ids: dict[str, int | None], vigente_desde: date, mes_actual: date
+    telegram_ids: Mapping[str, int | None], vigente_desde: date, mes_actual: date
 ) -> list[ConfigFila]:
     """Filas iniciales de Config. Los IDs faltantes quedan vacíos para completar a mano."""
     filas: list[ConfigFila] = []
