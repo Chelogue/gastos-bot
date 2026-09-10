@@ -27,5 +27,16 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** Fase 0 (infra y plantilla). Nada implementado aún; el scaffold contiene solo docs, config y estructura de carpetas.
-**Requerimientos cerrados:** ninguno.
+**Fase en curso:** Fase 0 (infra) a la espera de credenciales; Fase 1 (núcleo) construida y testeada
+con dobles, pendiente de probar contra Telegram/Google reales y de correr el bake-off (R19).
+
+**Hecho (2026-09-10):** toolchain, CI, config validada, logs JSON, FastAPI con /health y /webhook,
+Dockerfile verificado, `create_sheet.py`, `set_webhook.py`, `recalc_dashboard.py`, `domain/`
+completo, `extraction/` (Gemini, Claude, DeepSeek + bake-off), `storage/` real y fakes, `bot/`
+(tarjeta de dos pasos, flujo completo con rollback). 169 tests sin red. ADRs 0001–0005.
+
+**Falta de Fase 0:** `infra/setup_gcp.sh`, `infra/cloudrun.yaml`, `.github/workflows/deploy.yml`,
+primer deploy y webhook (requieren proyecto GCP, `gcloud auth login` y OK explícito).
+
+**Requerimientos cerrados (con tests, sin validación real aún):** R1, R2, R3, R4, R5, R6, R14, R16,
+R17, R18. R19 tiene el script listo; faltan los 30 comprobantes. R15 al desplegar.
