@@ -1,7 +1,8 @@
-"""Crea o repara la estructura del Sheet (PRD §9). Idempotente: correrlo dos veces no cambia nada.
+"""Crea o repara la estructura y el diseño del Sheet (PRD §9). Idempotente.
 
 Trabaja sobre un ``gspread.Spreadsheet`` (o un doble con la misma interfaz mínima, ver
-tests/fakes.py). Nunca borra datos ni pisa una fila de Config/Categorias que ya exista.
+tests/fakes.py). Nunca borra datos ni pisa una fila de Config/Categorias que ya exista. El diseño
+(``sheet_estilo``) se reaplica en cada corrida: una corrida repara formatos viejos.
 """
 
 from __future__ import annotations
@@ -11,14 +12,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from gastos_bot.storage import sheet_estilo as estilo
 from gastos_bot.storage import sheet_schema as schema
 
 TABS_POR_DEFECTO = frozenset({"Sheet1", "Hoja 1", "Hoja1"})
 FILAS_INICIALES = 1000
-ANCHO_GRAFICO_PX = 640
-ALTO_GRAFICO_PX = 340
-FILA_PRIMER_GRAFICO = 30  # debajo de la tabla del Dashboard
-FILAS_POR_GRAFICO = 18
 
 
 @dataclass
@@ -46,13 +44,16 @@ def _asegurar_pestana(
             title=titulo, rows=FILAS_INICIALES, cols=max(len(columnas), 8), index=index
         )
         resultado.creadas.append(titulo)
-    encabezado = ws.row_values(1)
-    if not encabezado:
-        ws.update(values=[list(columnas)], range_name="A1")
-    elif tuple(encabezado[: len(columnas)]) != columnas:
+    visibles = estilo.etiquetas(titulo, columnas)
+    encabezado = tuple(ws.row_values(1)[: len(columnas)])
+    if not any(encabezado) or encabezado == columnas:
+        # Vacío o con las claves técnicas de una versión anterior: se escriben las etiquetas.
+        if encabezado != visibles:
+            ws.update(values=[list(visibles)], range_name="A1")
+    elif encabezado != visibles:
         resultado.avisos.append(
             f"{titulo}: el encabezado no coincide con el esquema; no se tocó. "
-            f"Esperado {list(columnas)}, hay {encabezado}"
+            f"Esperado {list(visibles)}, hay {list(encabezado)}"
         )
     return ws
 
@@ -64,13 +65,13 @@ def _indice_para_mes(sh: Any, mes: str) -> int:
 
 
 def asegurar_pestana_mes(sh: Any, mes: str, resultado: Resultado | None = None) -> Any:
-    """Crea la pestaña ``YYYY-MM`` si no existe, en su lugar. La usa el bot en cada alta."""
+    """Crea la pestaña ``YYYY-MM`` si no existe, en su lugar y con su diseño. La usa el bot."""
     resultado = resultado or Resultado()
     ws = _por_titulo(sh).get(mes)
     if ws is not None:
         return ws
     ws = _asegurar_pestana(sh, mes, schema.MES_COLUMNAS, resultado, index=_indice_para_mes(sh, mes))
-    sh.batch_update({"requests": _requests_formato_mes(ws.id)})
+    sh.batch_update({"requests": _diseno_mes(ws.id, sin_bandas=False, reglas_previas=0)})
     return ws
 
 
@@ -121,69 +122,118 @@ def _requests_orden_y_ocultas(sh: Any) -> list[dict[str, Any]]:
     return requests
 
 
-def _fila_encabezado_negrita(sheet_id: int, n_cols: int) -> list[dict[str, Any]]:
-    return [
-        {
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id,
-                    "startRowIndex": 0,
-                    "endRowIndex": 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": n_cols,
-                },
-                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
-                "fields": "userEnteredFormat.textFormat.bold",
-            }
-        },
-        {
-            "updateSheetProperties": {
-                "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
-                "fields": "gridProperties.frozenRowCount",
-            }
-        },
-    ]
+# ---------- diseño por pestaña ----------
 
 
-def _formato_columna(sheet_id: int, col: int, tipo: str, patron: str) -> dict[str, Any]:
-    return {
-        "repeatCell": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 1,
-                "startColumnIndex": col,
-                "endColumnIndex": col + 1,
-            },
-            "cell": {"userEnteredFormat": {"numberFormat": {"type": tipo, "pattern": patron}}},
-            "fields": "userEnteredFormat.numberFormat",
+@dataclass(frozen=True)
+class _Meta:
+    """Lo que necesitamos de fetch_sheet_metadata() por pestaña, para ser idempotentes."""
+
+    charts: dict[str, int]  # título → chartId
+    tiene_bandas: bool
+    reglas: int
+
+
+def _metadatos(sh: Any) -> dict[int, _Meta]:
+    salida: dict[int, _Meta] = {}
+    for hoja in sh.fetch_sheet_metadata().get("sheets", []):
+        sid = hoja.get("properties", {}).get("sheetId")
+        charts = {
+            ch.get("spec", {}).get("title", ""): ch.get("chartId", 0)
+            for ch in hoja.get("charts", [])
         }
-    }
+        salida[sid] = _Meta(
+            charts=charts,
+            tiene_bandas=bool(hoja.get("bandedRanges")),
+            reglas=len(hoja.get("conditionalFormats", [])),
+        )
+    return salida
 
 
-def _requests_formato_mes(sheet_id: int) -> list[dict[str, Any]]:
-    c = schema.MES_COLUMNAS.index
-    return [
-        *_fila_encabezado_negrita(sheet_id, len(schema.MES_COLUMNAS)),
-        _formato_columna(sheet_id, c("fecha_gasto"), "DATE", "yyyy-mm-dd"),
-        _formato_columna(sheet_id, c("fecha_envio"), "DATE_TIME", "yyyy-mm-dd hh:mm"),
-        _formato_columna(sheet_id, c("fecha_modificacion"), "DATE_TIME", "yyyy-mm-dd hh:mm"),
-        _formato_columna(sheet_id, c("monto"), "NUMBER", "#,##0.00"),
-        _formato_columna(sheet_id, c("tc_mes"), "NUMBER", "0.00"),
-        _formato_columna(sheet_id, c("monto_usd"), "NUMBER", "#,##0.00"),
+def _diseno_mes(sheet_id: int, *, sin_bandas: bool, reglas_previas: int) -> list[dict[str, Any]]:
+    cols = schema.MES_COLUMNAS
+    c = cols.index
+    requests: list[dict[str, Any]] = [
+        *estilo.encabezado(sheet_id, len(cols), congelar_columnas=1),
+        *estilo.anchos(sheet_id, cols, estilo.ANCHOS_MES),
+        estilo.fuente_cuerpo(sheet_id, len(cols)),
+        estilo.formato_columna(sheet_id, c("fecha_gasto"), "DATE", "yyyy-mm-dd", "CENTER"),
+        estilo.formato_columna(
+            sheet_id, c("fecha_envio"), "DATE_TIME", "yyyy-mm-dd hh:mm", "CENTER"
+        ),
+        estilo.formato_columna(
+            sheet_id, c("fecha_modificacion"), "DATE_TIME", "yyyy-mm-dd hh:mm", "CENTER"
+        ),
+        estilo.formato_columna(sheet_id, c("monto"), "NUMBER", "#,##0.00"),
+        estilo.formato_columna(sheet_id, c("tc_mes"), "NUMBER", "0.00"),
+        estilo.formato_columna(sheet_id, c("monto_usd"), "NUMBER", "#,##0.00"),
+        *(
+            estilo.alinear_columna(sheet_id, c(col), "CENTER")
+            for col in (
+                "compartido",
+                "moneda",
+                "quincena",
+                "editado",
+                "estado",
+                "tipo_doc",
+                "quien_subio",
+            )
+        ),  # fmt: skip
+        estilo.validacion_lista(sheet_id, c("compartido"), ("sí", "no")),
+        estilo.validacion_lista(sheet_id, c("moneda"), ("UYU", "USD")),
+        estilo.validacion_lista(sheet_id, c("rubro"), schema.RUBROS),
+        estilo.validacion_lista(
+            sheet_id, c("tipo_doc"), ("factura", "debito", "reembolso", "texto")
+        ),
+        estilo.validacion_lista(sheet_id, c("quincena"), ("Q1", "Q2")),
+        estilo.validacion_lista(sheet_id, c("editado"), ("sí", "no")),
+        estilo.validacion_lista(sheet_id, c("estado"), ("activo", "eliminado")),
+        estilo.color_pestana(sheet_id, estilo.TAB_MES),
+        *estilo.borrar_reglas_condicionales(sheet_id, reglas_previas),
+        *estilo.reglas_mes(sheet_id),
     ]
+    if not sin_bandas:
+        requests.append(estilo.bandas(sheet_id, len(cols)))
+    return requests
 
 
-def _requests_formato_dashboard(sheet_id: int) -> list[dict[str, Any]]:
-    c = schema.DASHBOARD_COLUMNAS.index
-    usd = [col for col in schema.DASHBOARD_COLUMNAS if col.endswith("_usd") and col != "tc_uyu_usd"]
-    pct = [col for col in schema.DASHBOARD_COLUMNAS if col.endswith("_pct")]
-    return [
-        *_fila_encabezado_negrita(sheet_id, len(schema.DASHBOARD_COLUMNAS)),
-        _formato_columna(sheet_id, c("tc_uyu_usd"), "NUMBER", "0.00"),
-        *(_formato_columna(sheet_id, c(col), "NUMBER", "#,##0") for col in usd),
-        # Los porcentajes se guardan como fracción (0.42) y se muestran como 42.0 %.
-        *(_formato_columna(sheet_id, c(col), "PERCENT", "0.0%") for col in pct),
+def _diseno_dashboard(sheet_id: int, meta: _Meta) -> list[dict[str, Any]]:
+    cols = schema.DASHBOARD_COLUMNAS
+    c = cols.index
+    usd = [col for col in cols if col.endswith("_usd") and col != "tc_uyu_usd"]
+    pct = [col for col in cols if col.endswith("_pct")]
+    requests: list[dict[str, Any]] = [
+        *estilo.encabezado(sheet_id, len(cols), congelar_columnas=1),
+        *estilo.anchos(sheet_id, cols, estilo.ANCHOS_DASHBOARD, estilo.ANCHO_DASHBOARD_DEFECTO),
+        estilo.fuente_cuerpo(sheet_id, len(cols)),
+        estilo.alinear_columna(sheet_id, c("mes"), "CENTER"),
+        estilo.alinear_columna(sheet_id, c("cumplimiento"), "CENTER"),
+        estilo.formato_columna(sheet_id, c("tc_uyu_usd"), "NUMBER", "0.00"),
+        estilo.formato_columna(sheet_id, c("n_registros"), "NUMBER", "0"),
+        *(estilo.formato_columna(sheet_id, c(col), "NUMBER", "#,##0") for col in usd),
+        *(estilo.formato_columna(sheet_id, c(col), "PERCENT", "0.0%") for col in pct),
+        estilo.ocultar_lineas(sheet_id, True),
+        estilo.color_pestana(sheet_id, estilo.TAB_DASHBOARD),
+        *estilo.borrar_reglas_condicionales(sheet_id, meta.reglas),
+        *estilo.reglas_dashboard(sheet_id),
     ]
+    if not meta.tiene_bandas:
+        requests.append(estilo.bandas(sheet_id, len(cols)))
+    return requests
+
+
+def _diseno_tabla_simple(
+    sheet_id: int, columnas: tuple[str, ...], anchos: dict[str, int], meta: _Meta
+) -> list[dict[str, Any]]:
+    requests: list[dict[str, Any]] = [
+        *estilo.encabezado(sheet_id, len(columnas)),
+        *estilo.anchos(sheet_id, columnas, anchos),
+        estilo.fuente_cuerpo(sheet_id, len(columnas)),
+        estilo.color_pestana(sheet_id, estilo.TAB_OCULTA),
+    ]
+    if not meta.tiene_bandas:
+        requests.append(estilo.bandas(sheet_id, len(columnas)))
+    return requests
 
 
 def _rango_columna(sheet_id: int, col: int) -> dict[str, Any]:
@@ -193,7 +243,7 @@ def _rango_columna(sheet_id: int, col: int) -> dict[str, Any]:
                 {
                     "sheetId": sheet_id,
                     "startRowIndex": 0,
-                    "endRowIndex": FILA_PRIMER_GRAFICO - 1,
+                    "endRowIndex": estilo.FILA_GRAFICOS - 1,
                     "startColumnIndex": col,
                     "endColumnIndex": col + 1,
                 }
@@ -208,7 +258,7 @@ def _request_grafico(sheet_id: int, spec: schema.GraficoSpec, posicion: int) -> 
         "chartType": spec.tipo,
         "legendPosition": "BOTTOM_LEGEND",
         "headerCount": 1,
-        "axis": [{"position": "BOTTOM_AXIS", "title": "mes"}],
+        "axis": [{"position": "BOTTOM_AXIS", "title": "Mes"}],
         "domains": [{"domain": _rango_columna(sheet_id, c("mes"))}],
         "series": [
             {"series": _rango_columna(sheet_id, c(col)), "targetAxis": "LEFT_AXIS"}
@@ -221,28 +271,22 @@ def _request_grafico(sheet_id: int, spec: schema.GraficoSpec, posicion: int) -> 
         "addChart": {
             "chart": {
                 "spec": {"title": spec.titulo, "basicChart": basic},
-                "position": {
-                    "overlayPosition": {
-                        "anchorCell": {
-                            "sheetId": sheet_id,
-                            "rowIndex": FILA_PRIMER_GRAFICO + posicion * FILAS_POR_GRAFICO,
-                            "columnIndex": 0,
-                        },
-                        "widthPixels": ANCHO_GRAFICO_PX,
-                        "heightPixels": ALTO_GRAFICO_PX,
-                    }
-                },
+                "position": estilo.posicion_grafico(sheet_id, posicion),
             }
         }
     }
 
 
-def _titulos_graficos_existentes(sh: Any, sheet_id: int) -> set[str]:
-    meta = sh.fetch_sheet_metadata()
-    for hoja in meta.get("sheets", []):
-        if hoja.get("properties", {}).get("sheetId") == sheet_id:
-            return {ch.get("spec", {}).get("title", "") for ch in hoja.get("charts", [])}
-    return set()
+def _graficos(sheet_id: int, meta: _Meta, resultado: Resultado) -> list[dict[str, Any]]:
+    """Crea los gráficos que falten y acomoda los existentes en su lugar (lado a lado)."""
+    requests: list[dict[str, Any]] = []
+    for i, spec in enumerate(schema.GRAFICOS):
+        if spec.titulo in meta.charts:
+            requests.append(estilo.mover_grafico(meta.charts[spec.titulo], sheet_id, i))
+        else:
+            requests.append(_request_grafico(sheet_id, spec, i))
+            resultado.graficos_creados.append(spec.titulo)
+    return requests
 
 
 def asegurar_estructura(
@@ -279,20 +323,23 @@ def asegurar_estructura(
         if titulo in TABS_POR_DEFECTO and not any(ws.get_all_values()):
             sh.del_worksheet(ws)
 
+    meta = _metadatos(sh)
+    vacio = _Meta(charts={}, tiene_bandas=False, reglas=0)
     requests: list[dict[str, Any]] = _requests_orden_y_ocultas(sh)
-    # Los formatos son idempotentes: se reaplican siempre, así una corrida repara formatos viejos.
-    requests += _requests_formato_dashboard(dashboard.id)
-    for ws in (config, categorias, pendientes):
-        requests += _fila_encabezado_negrita(ws.id, 8)
+    requests += _diseno_dashboard(dashboard.id, meta.get(dashboard.id, vacio))
     for titulo, ws in _por_titulo(sh).items():
         if schema.es_pestana_de_mes(titulo):
-            requests += _requests_formato_mes(ws.id)
-
-    existentes = _titulos_graficos_existentes(sh, dashboard.id)
-    for i, spec in enumerate(schema.GRAFICOS):
-        if spec.titulo not in existentes:
-            requests.append(_request_grafico(dashboard.id, spec, i))
-            resultado.graficos_creados.append(spec.titulo)
+            _asegurar_pestana(sh, titulo, schema.MES_COLUMNAS, resultado)  # etiquetas al día
+            m = meta.get(ws.id, vacio)
+            requests += _diseno_mes(ws.id, sin_bandas=m.tiene_bandas, reglas_previas=m.reglas)
+    simples = (
+        (config, schema.CONFIG_COLUMNAS, estilo.ANCHOS_CONFIG),
+        (categorias, schema.CATEGORIAS_COLUMNAS, estilo.ANCHOS_CATEGORIAS),
+        (pendientes, schema.PENDIENTES_COLUMNAS, estilo.ANCHOS_PENDIENTES),
+    )
+    for ws, columnas, anchos in simples:
+        requests += _diseno_tabla_simple(ws.id, columnas, anchos, meta.get(ws.id, vacio))
+    requests += _graficos(dashboard.id, meta.get(dashboard.id, vacio), resultado)
 
     if requests:
         sh.batch_update({"requests": requests})

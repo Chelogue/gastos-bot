@@ -121,6 +121,14 @@ class FakeWorksheet:
         self.values.insert(index - 1, [str(v) for v in values])
 
 
+_REQUESTS_IGNORADOS = (
+    "repeatCell",
+    "updateDimensionProperties",
+    "setDataValidation",
+    "updateEmbeddedObjectPosition",
+)
+
+
 class FakeSpreadsheet:
     """Spreadsheet en memoria: pestañas, orden, ocultas, gráficos y batch_update básico."""
 
@@ -128,7 +136,10 @@ class FakeSpreadsheet:
         self.title = "Gastos (fake)"
         self._sheets: list[FakeWorksheet] = []
         self._charts: dict[int, list[dict[str, Any]]] = {}
+        self._bandas: dict[int, list[dict[str, Any]]] = {}
+        self._reglas: dict[int, list[dict[str, Any]]] = {}
         self._next_id = 0
+        self._next_chart = 100
         self.batch_calls: list[dict[str, Any]] = []
         if con_pestana_por_defecto:
             self.add_worksheet("Sheet1", 1000, 26)
@@ -163,6 +174,8 @@ class FakeSpreadsheet:
                         "hidden": ws.isSheetHidden,
                     },
                     "charts": list(self._charts.get(ws.id, [])),
+                    "bandedRanges": list(self._bandas.get(ws.id, [])),
+                    "conditionalFormats": list(self._reglas.get(ws.id, [])),
                 }
                 for ws in self._sheets
             ]
@@ -184,10 +197,23 @@ class FakeSpreadsheet:
                     self._sheets.remove(ws)
                     self._sheets.insert(props["index"], ws)
             elif "addChart" in req:
-                chart = req["addChart"]["chart"]
+                chart = dict(req["addChart"]["chart"])
                 sheet_id = chart["position"]["overlayPosition"]["anchorCell"]["sheetId"]
+                self._next_chart += 1
+                chart["chartId"] = self._next_chart
                 self._charts.setdefault(sheet_id, []).append(chart)
-            elif "repeatCell" in req:
+            elif "addBanding" in req:
+                sheet_id = req["addBanding"]["bandedRange"]["range"]["sheetId"]
+                self._bandas.setdefault(sheet_id, []).append(req["addBanding"]["bandedRange"])
+            elif "addConditionalFormatRule" in req:
+                sheet_id = req["addConditionalFormatRule"]["rule"]["ranges"][0]["sheetId"]
+                self._reglas.setdefault(sheet_id, []).append(
+                    req["addConditionalFormatRule"]["rule"]
+                )
+            elif "deleteConditionalFormatRule" in req:
+                sheet_id = req["deleteConditionalFormatRule"]["sheetId"]
+                self._reglas[sheet_id].pop(req["deleteConditionalFormatRule"]["index"])
+            elif any(k in req for k in _REQUESTS_IGNORADOS):
                 pass
             else:
                 raise NotImplementedError(f"request no soportado en el fake: {list(req)}")

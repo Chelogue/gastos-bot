@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from gastos_bot.storage import sheet_estilo as estilo
 from gastos_bot.storage import sheet_schema as schema
 from gastos_bot.storage.sheet_setup import asegurar_estructura, asegurar_pestana_mes
 from tests.fakes import FakeSpreadsheet
@@ -22,9 +23,14 @@ def test_crea_todo_desde_cero_en_el_orden_del_prd() -> None:
     ocultas = {ws.title for ws in sh.worksheets() if ws.isSheetHidden}
     assert ocultas == {"Config", "Categorias", "Pendientes"}
     por_titulo = {ws.title: ws for ws in sh.worksheets()}
-    assert por_titulo["Dashboard"].row_values(1) == list(schema.DASHBOARD_COLUMNAS)
-    assert por_titulo["2026-09"].row_values(1) == list(schema.MES_COLUMNAS)
-    assert por_titulo["Pendientes"].row_values(1) == list(schema.PENDIENTES_COLUMNAS)
+    assert por_titulo["Dashboard"].row_values(1) == list(
+        estilo.etiquetas("Dashboard", schema.DASHBOARD_COLUMNAS)
+    )
+    assert por_titulo["Dashboard"].row_values(1)[:3] == ["Mes", "TC UYU/USD", "Ingreso (USD)"]
+    assert por_titulo["2026-09"].row_values(1) == list(
+        estilo.etiquetas("2026-09", schema.MES_COLUMNAS)
+    )
+    assert por_titulo["Pendientes"].row_values(1)[0] == "ID pendiente"
     assert r.filas_agregadas == {"Config": 10, "Categorias": 17}
     assert len(r.graficos_creados) == 3
     assert r.avisos == []
@@ -47,10 +53,12 @@ def test_segunda_corrida_no_cambia_nada() -> None:
     r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     assert r.sin_cambios and r.avisos == []
     assert _titulos(sh) == ["Dashboard", "2026-09", "Config", "Categorias", "Pendientes"]
-    # la segunda corrida solo reaplica formatos (idempotentes): ni orden, ni gráficos, ni filas
+    # la segunda corrida solo reaplica diseño (idempotente): ni orden, ni gráficos, ni bandas nuevas
     ultimos = sh.batch_calls[-1]["requests"]
-    assert all("repeatCell" in q or "updateSheetProperties" in q for q in ultimos)
-    assert not any("addChart" in q for q in ultimos)
+    assert not any("addChart" in q or "addBanding" in q for q in ultimos)
+    assert sum(1 for q in ultimos if "updateEmbeddedObjectPosition" in q) == 3
+    meta = sh.fetch_sheet_metadata()["sheets"][0]
+    assert len(meta["bandedRanges"]) == 1 and len(meta["conditionalFormats"]) == 5
     categorias = next(ws for ws in sh.worksheets() if ws.title == "Categorias")
     assert len(categorias.get_all_values()) == 1 + 17
     assert len(sh.fetch_sheet_metadata()["sheets"][0]["charts"]) == 3
@@ -83,6 +91,23 @@ def test_encabezado_distinto_avisa_y_no_toca() -> None:
     r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     assert any("Config" in a for a in r.avisos)
     assert ws.row_values(1) == ["clave", "valor"]
+
+
+def test_pestana_de_mes_existente_recibe_etiquetas() -> None:
+    sh = FakeSpreadsheet()
+    ws = sh.add_worksheet("2026-09", 10, 20)
+    ws.update(values=[list(schema.MES_COLUMNAS)], range_name="A1")
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    assert ws.row_values(1)[:4] == ["ID", "Fecha gasto", "Enviado", "Quién"]
+
+
+def test_encabezado_con_claves_tecnicas_se_actualiza_a_etiquetas() -> None:
+    sh = FakeSpreadsheet()
+    ws = sh.add_worksheet("Categorias", 10, 10)
+    ws.update(values=[list(schema.CATEGORIAS_COLUMNAS)], range_name="A1")
+    r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    assert r.avisos == []
+    assert ws.row_values(1) == ["Subcategoría", "Rubro", "Activa"]
 
 
 def test_pestanas_de_mes_quedan_en_orden_cronologico() -> None:
