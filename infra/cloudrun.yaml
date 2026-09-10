@@ -32,7 +32,7 @@ spec:
             - name: LLM_PROVIDER
               value: gemini
             - name: LLM_MODEL
-              value: gemini-2.5-flash
+              value: gemini-3.6-flash
             - name: GOOGLE_SHEET_ID
               value: SHEET_ID
             - name: GOOGLE_DRIVE_ROOT_FOLDER_ID

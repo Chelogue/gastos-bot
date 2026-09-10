@@ -32,7 +32,7 @@ Qué va en `.env`:
 | `TELEGRAM_BOT_TOKEN` | @BotFather → /newbot |
 | `TELEGRAM_WEBHOOK_SECRET` | `openssl rand -hex 24` |
 | `TELEGRAM_ALLOWED_IDS` | @userinfobot te dice tu ID (los dos, separados por coma) |
-| `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` | `gemini` + `gemini-2.5-flash` + key de AI Studio (tier pago) |
+| `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` | `gemini` + `gemini-3.6-flash` + key de AI Studio (tier pago) |
 | `GOOGLE_SHEET_ID` | el ID en la URL del Sheet (creá uno vacío y compartilo como editor con tu cuenta y con la service account) |
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID` | el ID en la URL de la carpeta `Gastos/` en Drive (compartida igual) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | vacío: en local ADC impersona a la service account (ver nota); en Cloud Run se usa la SA nativa |
@@ -50,7 +50,7 @@ Las imágenes que sube la service account quedan en la carpeta compartida pero c
 Poné 30 comprobantes en `tests/fixtures/comprobantes/` y su verdad en `tests/fixtures/ground_truth.json` (ver el README de esa carpeta). Después:
 
 ```bash
-uv run python tests/evals/run_extraction_eval.py --provider gemini --model gemini-2.5-flash
+uv run python tests/evals/run_extraction_eval.py --provider gemini --model gemini-3.6-flash
 uv run python tests/evals/run_extraction_eval.py --provider anthropic --model claude-haiku-4-5
 ```
 
