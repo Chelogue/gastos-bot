@@ -2,6 +2,10 @@
 
 Uso:
     uv run python scripts/create_sheet.py [--sheet-id ID] [--ids Marcelo=111,Nikole=222]
+                                          [--share-with <email de la service account>]
+
+``--share-with`` da permiso de editor sobre el Sheet y sobre la carpeta raíz de Drive
+(GOOGLE_DRIVE_ROOT_FOLDER_ID) a la service account del bot. Idempotente.
 
 Lee GOOGLE_SHEET_ID y GOOGLE_APPLICATION_CREDENTIALS de .env (o del entorno). Sin
 GOOGLE_APPLICATION_CREDENTIALS usa ADC: ``gcloud auth application-default login`` con scopes de
@@ -24,6 +28,7 @@ from gastos_bot.storage.sheet_setup import asegurar_estructura
 class ScriptSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     google_sheet_id: str = ""
+    google_drive_root_folder_id: str = ""
     google_application_credentials: str | None = None
 
 
@@ -43,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sheet-id", help="ID del Sheet (por defecto GOOGLE_SHEET_ID)")
     parser.add_argument("--ids", help="IDs de Telegram: Marcelo=111,Nikole=222")
+    parser.add_argument("--share-with", help="email de la service account a la que dar editor")
     args = parser.parse_args(argv)
 
     settings = ScriptSettings()
@@ -66,6 +72,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  + gráfico creado: {g}")
     for aviso in resultado.avisos:
         print(f"  ! {aviso}")
+
+    if args.share_with:
+        from gastos_bot.storage.drive import DriveApiReal
+
+        api = DriveApiReal(creds)
+        objetivos = [("Sheet", sheet_id)]
+        if settings.google_drive_root_folder_id:
+            objetivos.append(("carpeta de Drive", settings.google_drive_root_folder_id))
+        for nombre, file_id in objetivos:
+            nuevo = api.compartir_editor(file_id, args.share_with)
+            estado = "agregado como editor" if nuevo else "ya era editor"
+            print(f"  {'+' if nuevo else '='} {nombre}: {args.share_with} {estado}")
     return 1 if resultado.avisos else 0
 
 

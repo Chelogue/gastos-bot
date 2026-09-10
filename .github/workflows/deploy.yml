@@ -19,6 +19,9 @@ env:
 
 jobs:
   deploy:
+    # Traba manual (CLAUDE.md: no desplegar sin confirmación explícita). Se habilita creando la
+    # variable de repositorio DEPLOY_ENABLED=true; hasta entonces cada push salta este job.
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

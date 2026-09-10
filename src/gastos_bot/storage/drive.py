@@ -75,6 +75,25 @@ class DriveApiReal:
     def borrar(self, file_id: str) -> None:
         self._svc.files().delete(fileId=file_id).execute()
 
+    def compartir_editor(self, file_id: str, email: str) -> bool:
+        """Da permiso de editor a ``email`` sobre un archivo o carpeta. True si lo agregó,
+        False si ya lo tenía. Sin notificación por mail."""
+        actuales = (
+            self._svc.permissions()
+            .list(fileId=file_id, fields="permissions(emailAddress, role)")
+            .execute()
+            .get("permissions", [])
+        )
+        if any(p.get("emailAddress", "").lower() == email.lower() for p in actuales):
+            return False
+        self._svc.permissions().create(
+            fileId=file_id,
+            body={"type": "user", "role": "writer", "emailAddress": email},
+            sendNotificationEmail=False,
+            fields="id",
+        ).execute()
+        return True
+
 
 class GoogleDriveRepo:
     """Resuelve rutas relativas a carpetas con caché en memoria + Config (ADR 0002)."""
