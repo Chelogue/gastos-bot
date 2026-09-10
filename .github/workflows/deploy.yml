@@ -1,0 +1,61 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  SERVICE: gastos-bot
+  IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/gastos-bot/gastos-bot
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Docker login en Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push
+        run: |
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy a Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:${{ github.sha }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --platform managed \
+            --service-account "gastos-bot-sa@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --allow-unauthenticated \
+            --min-instances 0 --max-instances 2 --concurrency 4 \
+            --cpu 1 --memory 512Mi --timeout 120 --cpu-boost \
+            --set-env-vars "LLM_PROVIDER=gemini,LLM_MODEL=${{ vars.LLM_MODEL }},GOOGLE_SHEET_ID=${{ vars.GOOGLE_SHEET_ID }},GOOGLE_DRIVE_ROOT_FOLDER_ID=${{ vars.GOOGLE_DRIVE_ROOT_FOLDER_ID }},TELEGRAM_ALLOWED_IDS=${{ vars.TELEGRAM_ALLOWED_IDS }},TZ=America/Montevideo,PENDIENTE_TTL_HOURS=48,LOG_LEVEL=INFO,LOG_FORMAT=json" \
+            --set-secrets "TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,LLM_API_KEY=LLM_API_KEY:latest"
+
+      - name: Health
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --region "${{ vars.GCP_REGION }}" --project "${{ vars.GCP_PROJECT_ID }}" --format 'value(status.url)')
+          echo "Servicio en $URL"
+          curl -fsS "$URL/health"

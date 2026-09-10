@@ -1,0 +1,58 @@
+# Servicio de Cloud Run (Knative). Se aplica con:
+#   gcloud run services replace infra/cloudrun.yaml --region "$REGION" --project "$PROJECT_ID"
+# El deploy de GitHub Actions usa `gcloud run deploy` con los mismos parámetros; este archivo es
+# la referencia declarativa. Placeholders: PROJECT_ID, REGION, IMAGE.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: gastos-bot
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      serviceAccountName: gastos-bot-sa@PROJECT_ID.iam.gserviceaccount.com
+      containerConcurrency: 4
+      timeoutSeconds: 120
+      containers:
+        - image: IMAGE
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: LLM_PROVIDER
+              value: gemini
+            - name: LLM_MODEL
+              value: gemini-2.5-flash
+            - name: GOOGLE_SHEET_ID
+              value: SHEET_ID
+            - name: GOOGLE_DRIVE_ROOT_FOLDER_ID
+              value: DRIVE_FOLDER_ID
+            - name: TELEGRAM_ALLOWED_IDS
+              value: "ALLOWED_IDS"
+            - name: TZ
+              value: America/Montevideo
+            - name: PENDIENTE_TTL_HOURS
+              value: "48"
+            - name: LOG_LEVEL
+              value: INFO
+            - name: LOG_FORMAT
+              value: json
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: TELEGRAM_BOT_TOKEN, key: latest }
+            - name: TELEGRAM_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: TELEGRAM_WEBHOOK_SECRET, key: latest }
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: LLM_API_KEY, key: latest }
