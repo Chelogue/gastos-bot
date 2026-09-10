@@ -26,6 +26,19 @@ uv run python scripts/recalc_dashboard.py --mes YYYY-MM
 Eso recalcula `monto_usd` en el Dashboard del mes. Las filas del mes conservan su `tc_mes`
 original; si querés reescribirlas, editá la columna en el Sheet.
 
+## Reautorizar Google (Drive/Sheets dejan de responder con 401/invalid_grant)
+
+El bot usa el token OAuth de Marcelo (ADR 0006). Se invalida si cambia la contraseña, si quita
+el acceso en https://myaccount.google.com/permissions o si Google lo expira. Para renovarlo:
+
+```bash
+uv run python scripts/autorizar_google.py --client-id "$GOOGLE_OAUTH_CLIENT_ID" --client-secret "$GOOGLE_OAUTH_CLIENT_SECRET"
+grep '^GOOGLE_OAUTH_TOKEN_JSON=' .env | cut -d= -f2- | gcloud secrets versions add GOOGLE_OAUTH_TOKEN_JSON --data-file=- --project gastos-bot-508217
+```
+
+Después, un redeploy (push a `main` o "Re-run" del workflow Deploy) para que Cloud Run tome la
+versión nueva del secreto. El cliente OAuth está en Google Auth Platform → Clientes.
+
 ## Rotar tokens
 
 - **Token del bot:** @BotFather → /revoke, guardá el nuevo en Secret Manager
@@ -47,10 +60,11 @@ recibe "expiró, reenviá la foto" si toca un botón viejo.
 
 ## Primer deploy (checklist)
 
-1. `infra/setup_gcp.sh <PROJECT_ID>` (idempotente): APIs, service account, Artifact Registry,
-   secretos, Workload Identity para GitHub Actions.
+1. `infra/setup_gcp.sh gastos-bot-508217 us-central1 Chelogue/gastos-bot` (idempotente): APIs,
+   service accounts, Artifact Registry, secretos, Workload Identity para GitHub Actions.
 2. Compartir el Sheet y la carpeta `Gastos/` con el email de la service account (editor).
-3. Cargar los secretos: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `LLM_API_KEY`.
-4. Push a `main` → deploy. Verificar `/health`.
+3. Cargar los secretos: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `LLM_API_KEY`,
+   `GOOGLE_OAUTH_TOKEN_JSON` (ver "Reautorizar Google").
+4. Variable de repo `DEPLOY_ENABLED=true` y push a `main` → deploy. Verificar `/health`.
 5. `uv run python scripts/set_webhook.py --url https://<servicio>.a.run.app/webhook`.
 6. Mandar `/start` desde cada uno de los dos chats.

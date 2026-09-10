@@ -27,16 +27,14 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** Fase 0 (infra) a la espera de credenciales; Fase 1 (núcleo) construida y testeada
-con dobles, pendiente de probar contra Telegram/Google reales y de correr el bake-off (R19).
+**Fase en curso:** Fase 1 desplegada en Cloud Run (proyecto `gastos-bot-508217`, us-central1) y
+probada con fotos reales el 2026-09-10: dos gastos guardados en el Sheet y en Drive. Falta el
+bake-off (R19) cuando haya 30 comprobantes. Próxima: Fase 2 (TC automático, reporte, Dashboard completo).
 
-**Hecho (2026-09-10):** toolchain, CI, config validada, logs JSON, FastAPI con /health y /webhook,
-Dockerfile verificado, `create_sheet.py`, `set_webhook.py`, `recalc_dashboard.py`, `domain/`
-completo, `extraction/` (Gemini, Claude, DeepSeek + bake-off), `storage/` real y fakes, `bot/`
-(tarjeta de dos pasos, flujo completo con rollback). 169 tests sin red. ADRs 0001–0005.
+**Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
+en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
+account (cuota 0 en Drive). Modelo `gemini-3.6-flash`. Webhook registrado en la URL de Cloud Run.
 
-**Falta de Fase 0:** `infra/setup_gcp.sh`, `infra/cloudrun.yaml`, `.github/workflows/deploy.yml`,
-primer deploy y webhook (requieren proyecto GCP, `gcloud auth login` y OK explícito).
-
-**Requerimientos cerrados (con tests, sin validación real aún):** R1, R2, R3, R4, R5, R6, R14, R16,
-R17, R18. R19 tiene el script listo; faltan los 30 comprobantes. R15 al desplegar.
+**Requerimientos cerrados:** R1, R2, R3, R4, R5, R6, R14, R15, R16, R17, R18 (validados con
+dobles y con una prueba real de punta a punta). R19: script listo, faltan los comprobantes.
+Provisional: TC de septiembre cargado a mano en Config (R7 llega en Fase 2).
