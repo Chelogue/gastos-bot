@@ -54,6 +54,14 @@ def test_nombre_archivo_segun_prd() -> None:
         nombre_archivo(F, "Amazon", Decimal("19.99"), Moneda.USD, ".pdf", intento=3)
         == "2026-09-10_Amazon_19.99-USD-3.pdf"
     )
+    assert (
+        nombre_archivo(F, "Disco", Decimal("1250"), Moneda.UYU, persona="Marcelo")
+        == "2026-09-10_Disco_1250-UYU_Marcelo.jpg"
+    )
+    nikole = nombre_archivo(
+        F, "Disco", Decimal("-300"), Moneda.UYU, persona="Nikole", reembolso=True, intento=2
+    )
+    assert nikole == "2026-09-10_Disco_300-UYU_R_Nikole-2.jpg"
 
 
 def test_colisiones() -> None:

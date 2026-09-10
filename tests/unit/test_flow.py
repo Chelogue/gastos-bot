@@ -135,7 +135,7 @@ async def test_camino_feliz_foto_a_fila() -> None:
     assert gasto.fecha_gasto == date(2026, 9, 3) and gasto.fecha_envio.hour == 12
     assert gasto.quincena.value == "Q1" and not gasto.editado
     ((ruta, nombre, contenido),) = m.drive.archivos.values()
-    assert ruta == ("2026-09", "Marcelo") and nombre == "2026-09-10_Disco_1250.5-UYU.jpg"
+    assert ruta == ("2026-09", "Marcelo") and nombre == "2026-09-10_Disco_1250.5-UYU_Marcelo.jpg"
     assert gasto.link_imagen == "https://drive.google.com/file/d/drive1"
     assert m.pendientes.pendientes[pid].estado is EstadoPendiente.GUARDADO
     assert m.pendientes.pendientes[pid].gasto_id == gasto.id
@@ -198,7 +198,7 @@ async def test_editar_monto_por_respuesta_y_fecha() -> None:
         and gasto.fecha_gasto == date(2026, 9, 10)
         and gasto.editado
     )
-    assert m.drive.archivos["drive1"][1] == "2026-09-10_Disco_1300-UYU.jpg"
+    assert m.drive.archivos["drive1"][1] == "2026-09-10_Disco_1300-UYU_Marcelo.jpg"
 
 
 async def test_texto_sin_pendiente_esperando() -> None:
@@ -274,9 +274,9 @@ async def test_colision_de_nombre_y_reembolso() -> None:
         await m.toque(f"g:{pid}")
     nombres = sorted(n for _, n, _ in m.drive.archivos.values())
     assert nombres == [
-        "2026-09-10_Disco_1250.5-UYU-2.jpg",
-        "2026-09-10_Disco_1250.5-UYU.jpg",
-        "2026-09-10_Disco_300-UYU_R.jpg",
+        "2026-09-10_Disco_1250.5-UYU_Marcelo-2.jpg",
+        "2026-09-10_Disco_1250.5-UYU_Marcelo.jpg",
+        "2026-09-10_Disco_300-UYU_R_Marcelo.jpg",
     ]
     ids = [g.id for g in m.gastos.filas["2026-09"]]
     assert ids == ["G-260910-001", "G-260910-002", "G-260910-003"]

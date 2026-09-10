@@ -319,6 +319,7 @@ class Flujo:
                         p.monto or Decimal(0),
                         p.moneda or Moneda.UYU,
                         extension,
+                        persona=persona.nombre,
                         reembolso=reembolso,
                         intento=i,
                     ),  # fmt: skip

@@ -14,6 +14,7 @@ dependencies = [
     "pydantic-settings",
     "structlog",
     "httpx",
+    "google-auth-oauthlib>=1.4.1",
 ]
 
 [project.optional-dependencies]

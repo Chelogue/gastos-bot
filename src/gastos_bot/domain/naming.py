@@ -1,8 +1,9 @@
 """Nombres de archivo y carpetas en Drive (R4).
 
-``Gastos/YYYY-MM/<Nombre>/YYYY-MM-DD_Comercio_1250-UYU.jpg``
+``Gastos/YYYY-MM/<Nombre>/YYYY-MM-DD_Comercio_1250-UYU_Marcelo.jpg``
 - Mes y fecha del nombre = fecha de envío (no la del comprobante).
-- Comercio en slug ASCII. Reembolso → ``_R`` antes de la extensión. Colisión → ``-2``, ``-3``.
+- Comercio en slug ASCII. Reembolso → ``_R``. Quien subió al final (pedido de Marcelo). Colisión
+  → ``-2``, ``-3`` antes de la extensión.
 """
 
 from __future__ import annotations
@@ -68,15 +69,19 @@ def nombre_archivo(
     moneda: Moneda,
     extension: str = ".jpg",
     *,
+    persona: str | None = None,
     reembolso: bool = False,
     intento: int = 1,
 ) -> str:
-    """``intento`` > 1 agrega ``-2``, ``-3``… para resolver colisiones en la misma carpeta."""
+    """``persona`` va al final del nombre (quién subió). ``intento`` > 1 agrega ``-2``, ``-3``…
+    para resolver colisiones en la misma carpeta."""
     base = (
         f"{fecha_envio:%Y-%m-%d}_{slug_comercio(comercio)}_{formatear_monto(monto)}-{moneda.value}"
     )
     if reembolso:
         base += "_R"
+    if persona:
+        base += f"_{slug_comercio(persona)}"
     if intento > 1:
         base += f"-{intento}"
     return base + extension
