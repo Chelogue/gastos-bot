@@ -14,6 +14,9 @@ __pycache__/
 .mypy_cache/
 dist/
 
+# resultados del bake-off (contienen datos de los comprobantes)
+tests/evals/resultados/
+
 # comprobantes reales (datos financieros)
 tests/fixtures/comprobantes/*
 !tests/fixtures/comprobantes/README.md

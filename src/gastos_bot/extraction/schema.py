@@ -112,3 +112,19 @@ def parsear_respuesta(texto: str, categorias: Sequence[str]) -> Extraccion:
         raise ExtraccionFallida(
             f"respuesta no cumple el esquema: {exc.error_count()} errores"
         ) from exc
+
+
+def schema_estricto() -> dict[str, Any]:
+    """Variante para salida estructurada estricta (Claude): todos los campos requeridos,
+    opcionales como nullable y sin propiedades extra. Semánticamente igual a SCHEMA_EXTRACCION."""
+    import copy
+
+    schema = copy.deepcopy(SCHEMA_EXTRACCION)
+    props = schema["properties"]
+    for nombre, prop in props.items():
+        if nombre not in schema["required"] and "type" in prop:
+            prop["type"] = [prop["type"], "null"]
+    schema["required"] = list(props)
+    schema["additionalProperties"] = False
+    props["confianza"]["additionalProperties"] = False
+    return schema
