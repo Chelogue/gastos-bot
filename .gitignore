@@ -1,0 +1,22 @@
+# entorno y secretos
+.env
+*.json
+!tests/fixtures/ground_truth.json
+!package.json
+*.pem
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+
+# comprobantes reales (datos financieros)
+tests/fixtures/comprobantes/*
+!tests/fixtures/comprobantes/README.md
+
+# sistema
+.DS_Store

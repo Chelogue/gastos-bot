@@ -1,0 +1,40 @@
+[project]
+name = "gastos-bot"
+version = "0.1.0"
+description = "Bot de Telegram para registro y reporte de gastos en pareja (Sheets + Drive + 50/30/20)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-telegram-bot",
+    "gspread",
+    "google-api-python-client",
+    "google-auth",
+    "pydantic",
+    "pydantic-settings",
+    "structlog",
+    "httpx",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai"]
+anthropic = ["anthropic"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "pre-commit"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requiere credenciales y red"]
+addopts = "-m 'not integration'"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
