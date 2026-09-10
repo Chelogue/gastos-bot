@@ -44,11 +44,13 @@ def test_config_tiene_ids_ingresos_tc_y_parametros() -> None:
 def test_segunda_corrida_no_cambia_nada() -> None:
     sh = FakeSpreadsheet()
     asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
-    llamadas = len(sh.batch_calls)
     r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     assert r.sin_cambios and r.avisos == []
     assert _titulos(sh) == ["Dashboard", "2026-09", "Config", "Categorias", "Pendientes"]
-    assert len(sh.batch_calls) == llamadas
+    # la segunda corrida solo reaplica formatos (idempotentes): ni orden, ni gráficos, ni filas
+    ultimos = sh.batch_calls[-1]["requests"]
+    assert all("repeatCell" in q or "updateSheetProperties" in q for q in ultimos)
+    assert not any("addChart" in q for q in ultimos)
     categorias = next(ws for ws in sh.worksheets() if ws.title == "Categorias")
     assert len(categorias.get_all_values()) == 1 + 17
     assert len(sh.fetch_sheet_metadata()["sheets"][0]["charts"]) == 3
@@ -91,9 +93,8 @@ def test_pestanas_de_mes_quedan_en_orden_cronologico() -> None:
     asegurar_pestana_mes(sh, "2026-08")
     assert _titulos(sh)[:5] == ["Dashboard", "2026-08", "2026-09", "2026-10", "2026-11"]
     # y una segunda corrida completa no reordena nada
-    llamadas = len(sh.batch_calls)
     asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
-    assert len(sh.batch_calls) == llamadas
+    assert _titulos(sh)[:5] == ["Dashboard", "2026-08", "2026-09", "2026-10", "2026-11"]
 
 
 def test_ids_faltantes_quedan_vacios_para_completar() -> None:

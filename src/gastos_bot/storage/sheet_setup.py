@@ -175,7 +175,7 @@ def _requests_formato_mes(sheet_id: int) -> list[dict[str, Any]]:
 
 def _requests_formato_dashboard(sheet_id: int) -> list[dict[str, Any]]:
     c = schema.DASHBOARD_COLUMNAS.index
-    usd = [col for col in schema.DASHBOARD_COLUMNAS if col.endswith("_usd")]
+    usd = [col for col in schema.DASHBOARD_COLUMNAS if col.endswith("_usd") and col != "tc_uyu_usd"]
     pct = [col for col in schema.DASHBOARD_COLUMNAS if col.endswith("_pct")]
     return [
         *_fila_encabezado_negrita(sheet_id, len(schema.DASHBOARD_COLUMNAS)),
@@ -253,9 +253,7 @@ def asegurar_estructura(
     mes = schema.nombre_pestana_mes(hoy)
 
     dashboard = _asegurar_pestana(sh, schema.TAB_DASHBOARD, schema.DASHBOARD_COLUMNAS, resultado, 0)
-    ws_mes = _por_titulo(sh).get(mes)
-    mes_nuevo = ws_mes is None
-    ws_mes = asegurar_pestana_mes(sh, mes, resultado)
+    asegurar_pestana_mes(sh, mes, resultado)
     config = _asegurar_pestana(sh, schema.TAB_CONFIG, schema.CONFIG_COLUMNAS, resultado)
     categorias = _asegurar_pestana(sh, schema.TAB_CATEGORIAS, schema.CATEGORIAS_COLUMNAS, resultado)
     pendientes = _asegurar_pestana(sh, schema.TAB_PENDIENTES, schema.PENDIENTES_COLUMNAS, resultado)
@@ -282,14 +280,13 @@ def asegurar_estructura(
             sh.del_worksheet(ws)
 
     requests: list[dict[str, Any]] = _requests_orden_y_ocultas(sh)
-    if schema.TAB_DASHBOARD in resultado.creadas:
-        requests += _requests_formato_dashboard(dashboard.id)
-    for titulo, ws in ((schema.TAB_CONFIG, config), (schema.TAB_CATEGORIAS, categorias),
-                       (schema.TAB_PENDIENTES, pendientes)):  # fmt: skip
-        if titulo in resultado.creadas:
-            requests += _fila_encabezado_negrita(ws.id, 8)
-    if mes_nuevo and mes not in resultado.creadas:
-        requests += _requests_formato_mes(ws_mes.id)
+    # Los formatos son idempotentes: se reaplican siempre, así una corrida repara formatos viejos.
+    requests += _requests_formato_dashboard(dashboard.id)
+    for ws in (config, categorias, pendientes):
+        requests += _fila_encabezado_negrita(ws.id, 8)
+    for titulo, ws in _por_titulo(sh).items():
+        if schema.es_pestana_de_mes(titulo):
+            requests += _requests_formato_mes(ws.id)
 
     existentes = _titulos_graficos_existentes(sh, dashboard.id)
     for i, spec in enumerate(schema.GRAFICOS):
