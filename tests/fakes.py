@@ -9,8 +9,12 @@ from typing import Any
 from telegram import Chat, Message, User
 from telegram.ext import ExtBot
 
-from gastos_bot.domain.models import Extraccion
+from gastos_bot.domain.categorias import Catalogo
+from gastos_bot.domain.indicador import Indicador
+from gastos_bot.domain.models import Config, EstadoPendiente, Extraccion, Gasto, Pendiente
+from gastos_bot.domain.quincena import mes_de
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida
+from gastos_bot.storage.base import ArchivoSubido, StorageError
 
 
 class FakeBot(ExtBot):  # type: ignore[type-arg]
@@ -169,3 +173,103 @@ class FakeExtractor:
         if isinstance(respuesta, Exception):
             raise respuesta
         return respuesta
+
+
+# ---------- storage en memoria ----------
+
+
+class FakeConfigRepo:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.carpetas_guardadas: dict[str, str] = {}
+
+    async def cargar(self) -> Config:
+        return self.config.model_copy(
+            update={"carpetas": {**self.config.carpetas, **self.carpetas_guardadas}}
+        )
+
+    async def guardar_carpeta(self, ruta: str, folder_id: str) -> None:
+        self.carpetas_guardadas[ruta] = folder_id
+
+
+class FakeCategoriasRepo:
+    def __init__(self, catalogo: Catalogo | None = None) -> None:
+        self._catalogo = catalogo or Catalogo.inicial()
+
+    async def catalogo(self) -> Catalogo:
+        return self._catalogo
+
+
+class FakeGastosRepo:
+    def __init__(self, fallar_al_agregar: bool = False) -> None:
+        self.filas: dict[str, list[Gasto]] = {}
+        self.fallar_al_agregar = fallar_al_agregar
+
+    async def ids_del_mes(self, mes: str) -> list[str]:
+        return [g.id for g in self.filas.get(mes, [])]
+
+    async def agregar(self, gasto: Gasto) -> None:
+        if self.fallar_al_agregar:
+            raise StorageError("Sheets caído (fake)")
+        self.filas.setdefault(mes_de(gasto.fecha_envio.date()), []).append(gasto)
+
+    async def listar_mes(self, mes: str) -> list[Gasto]:
+        return list(self.filas.get(mes, []))
+
+
+class FakePendientesRepo:
+    def __init__(self) -> None:
+        self.pendientes: dict[str, Pendiente] = {}
+
+    async def update_visto(self, update_id: int) -> bool:
+        return any(p.update_id == update_id for p in self.pendientes.values())
+
+    async def guardar(self, pendiente: Pendiente) -> None:
+        self.pendientes[pendiente.pendiente_id] = pendiente
+
+    async def obtener(self, pendiente_id: str) -> Pendiente | None:
+        return self.pendientes.get(pendiente_id)
+
+    async def esperando_respuesta(self, telegram_id: int) -> Pendiente | None:
+        candidatos = [
+            p
+            for p in self.pendientes.values()
+            if p.telegram_id == telegram_id
+            and p.estado is EstadoPendiente.ABIERTO
+            and p.esperando is not None
+        ]
+        return max(candidatos, key=lambda p: p.creado, default=None)
+
+    async def purgar_vencidos(self, ahora: dt.datetime) -> int:
+        vencidos = [k for k, p in self.pendientes.items() if p.expira <= ahora]
+        for k in vencidos:
+            del self.pendientes[k]
+        return len(vencidos)
+
+
+class FakeDriveRepo:
+    def __init__(self) -> None:
+        self.archivos: dict[str, tuple[tuple[str, ...], str, bytes]] = {}
+        self._n = 0
+
+    async def nombres_en(self, ruta: Sequence[str]) -> set[str]:
+        return {nombre for (r, nombre, _) in self.archivos.values() if r == tuple(ruta)}
+
+    async def subir(
+        self, ruta: Sequence[str], nombre: str, contenido: bytes, mime: str
+    ) -> ArchivoSubido:
+        self._n += 1
+        file_id = f"drive{self._n}"
+        self.archivos[file_id] = (tuple(ruta), nombre, contenido)
+        return ArchivoSubido(file_id=file_id, link=f"https://drive.google.com/file/d/{file_id}")
+
+    async def borrar(self, file_id: str) -> None:
+        self.archivos.pop(file_id, None)
+
+
+class FakeDashboardRepo:
+    def __init__(self) -> None:
+        self.recalculos: list[Indicador] = []
+
+    async def recalcular(self, indicador: Indicador) -> None:
+        self.recalculos.append(indicador)

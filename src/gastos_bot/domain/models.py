@@ -54,6 +54,23 @@ class Estado(StrEnum):
     ELIMINADO = "eliminado"
 
 
+class EstadoPendiente(StrEnum):
+    """Ciclo de vida de un pendiente. Se guarda dentro de ``json_extraccion`` (ADR 0003)."""
+
+    ABIERTO = "abierto"
+    GUARDADO = "guardado"
+    DESCARTADO = "descartado"
+    RECHAZADO = "rechazado"  # la imagen no era un comprobante (tipo_doc = otro)
+
+
+class CampoEsperado(StrEnum):
+    """Qué respuesta de texto (ForceReply) está esperando la tarjeta (R3)."""
+
+    MONTO = "monto"
+    FECHA = "fecha"
+    MONTO_USD = "monto_usd"  # D3: moneda extranjera
+
+
 Monto = Annotated[Decimal, Field(max_digits=14, decimal_places=2)]
 Confianza01 = Annotated[float, Field(ge=0.0, le=1.0)]
 
@@ -139,8 +156,13 @@ class Pendiente(BaseModel):
     compartido: bool | None = None  # paso 1 obligatorio de la tarjeta (R3)
     ediciones: Ediciones = Ediciones()
     nota_caption: str | None = None
+    mime: str | None = None
     creado: datetime
     expira: datetime
+    estado: EstadoPendiente = EstadoPendiente.ABIERTO
+    esperando: CampoEsperado | None = None
+    mensaje_tarjeta_id: int | None = None  # message_id de la tarjeta, para editarla
+    gasto_id: str | None = None  # se completa al guardar
 
     # Valores efectivos = extracción con las ediciones encima.
     @property
