@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 
+from telegram.error import NetworkError, TimedOut
+
 from gastos_bot.bot.app import build_application, process_payload
 from gastos_bot.config import get_settings
 from gastos_bot.logging_setup import configure_logging, get_logger
@@ -33,9 +35,17 @@ async def main() -> None:
     offset: int | None = None
     try:
         while True:
-            updates = await bot.get_updates(
-                offset=offset, timeout=25, allowed_updates=["message", "callback_query"]
-            )
+            try:
+                updates = await bot.get_updates(
+                    offset=offset,
+                    timeout=20,
+                    read_timeout=30,
+                    allowed_updates=["message", "callback_query"],
+                )
+            except (TimedOut, NetworkError) as exc:
+                log.warning("polling_red", error=type(exc).__name__)
+                await asyncio.sleep(2)
+                continue
             for u in updates:
                 offset = u.update_id + 1
                 await process_payload(application, u.to_dict())
