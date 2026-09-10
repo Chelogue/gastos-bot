@@ -19,7 +19,7 @@ uv sync --all-extras
 cp .env.example .env            # completar valores (ver abajo)
 uv run pytest                   # sin red ni credenciales
 gcloud auth application-default login \
-  --scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/spreadsheets
+  --impersonate-service-account=gastos-bot-sa@<PROJECT_ID>.iam.gserviceaccount.com
 uv run python scripts/create_sheet.py --ids Marcelo=<id>,Nikole=<id>   # crea/repara el Sheet
 ./scripts/run_local.sh          # uvicorn + túnel cloudflared
 uv run python scripts/set_webhook.py --url https://<tunel>.trycloudflare.com/webhook
@@ -35,7 +35,13 @@ Qué va en `.env`:
 | `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` | `gemini` + `gemini-2.5-flash` + key de AI Studio (tier pago) |
 | `GOOGLE_SHEET_ID` | el ID en la URL del Sheet (creá uno vacío y compartilo como editor con tu cuenta y con la service account) |
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID` | el ID en la URL de la carpeta `Gastos/` en Drive (compartida igual) |
-| `GOOGLE_APPLICATION_CREDENTIALS` | vacío en local (usa ADC); en Cloud Run no se define |
+| `GOOGLE_APPLICATION_CREDENTIALS` | vacío: en local ADC impersona a la service account (ver nota); en Cloud Run se usa la SA nativa |
+
+**Por qué impersonar y no pedir scopes de Drive:** Google bloquea el cliente OAuth de gcloud
+cuando pide el scope de Drive ("Se bloqueó esta app"). Con `--impersonate-service-account` las
+credenciales locales piden tokens en nombre de la service account del bot, que ya es editora del
+Sheet y de la carpeta, y no hace falta ningún JSON key. Requiere ser Owner del proyecto o tener
+`roles/iam.serviceAccountTokenCreator` sobre esa cuenta.
 
 Las imágenes que sube la service account quedan en la carpeta compartida pero cuentan contra la cuota de la service account (15 GB): sobra por años.
 

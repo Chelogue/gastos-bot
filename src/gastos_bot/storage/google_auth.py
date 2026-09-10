@@ -1,8 +1,10 @@
 """Credenciales de Google sin JSON keys en el repo.
 
 - Cloud Run: la service account nativa del servicio (Application Default Credentials).
-- Local: ``gcloud auth application-default login`` (ADC con tu usuario) o, si se define
-  ``GOOGLE_APPLICATION_CREDENTIALS``, un archivo de service account fuera del repo.
+- Local: ``gcloud auth application-default login --impersonate-service-account=<SA del bot>``
+  (ADC que impersona a la service account: sin JSON keys y sin pedir scopes de Drive al usuario,
+  que Google bloquea) o, como último recurso, ``GOOGLE_APPLICATION_CREDENTIALS`` con un archivo
+  de service account fuera del repo.
 """
 
 from __future__ import annotations
