@@ -74,14 +74,24 @@ class FakeWorksheet:
         return [list(r) for r in self.values]
 
     def update(self, values: list[list[Any]], range_name: str = "A1") -> None:
-        assert range_name == "A1", "el fake solo soporta escribir desde A1"
-        for i, fila in enumerate(values):
+        assert range_name.startswith("A"), "el fake solo soporta rangos que empiezan en A"
+        inicio = int(range_name[1:] or 1) - 1
+        for i, fila in enumerate(values, start=inicio):
             while len(self.values) <= i:
                 self.values.append([])
             self.values[i] = [str(v) for v in fila]
 
     def append_rows(self, rows: list[list[Any]], value_input_option: str = "RAW") -> None:
         self.values.extend([str(v) for v in r] for r in rows)
+
+    def col_values(self, col: int) -> list[str]:
+        return [f[col - 1] if len(f) >= col else "" for f in self.values]
+
+    def delete_rows(self, index: int) -> None:
+        del self.values[index - 1]
+
+    def insert_row(self, values: list[Any], index: int, value_input_option: str = "RAW") -> None:
+        self.values.insert(index - 1, [str(v) for v in values])
 
 
 class FakeSpreadsheet:
