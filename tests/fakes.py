@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from typing import Any
 
 from telegram import Chat, Message, User
 from telegram.ext import ExtBot
+
+from gastos_bot.domain.models import Extraccion
+from gastos_bot.extraction.base import Entrada, ExtraccionFallida
 
 
 class FakeBot(ExtBot):  # type: ignore[type-arg]
@@ -146,3 +150,22 @@ class FakeSpreadsheet:
                 pass
             else:
                 raise NotImplementedError(f"request no soportado en el fake: {list(req)}")
+
+
+class FakeExtractor:
+    """Extractor determinista para tests del flujo: devuelve respuestas encoladas o una fija."""
+
+    nombre = "fake/fake"
+
+    def __init__(self, *respuestas: Extraccion | Exception) -> None:
+        self._cola = list(respuestas)
+        self.llamadas: list[tuple[Entrada, tuple[str, ...]]] = []
+
+    async def extraer(self, entrada: Entrada, categorias: Sequence[str]) -> Extraccion:
+        self.llamadas.append((entrada, tuple(categorias)))
+        if not self._cola:
+            raise ExtraccionFallida("FakeExtractor sin respuestas encoladas")
+        respuesta = self._cola.pop(0) if len(self._cola) > 1 else self._cola[0]
+        if isinstance(respuesta, Exception):
+            raise respuesta
+        return respuesta
