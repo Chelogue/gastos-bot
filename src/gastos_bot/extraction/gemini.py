@@ -14,6 +14,20 @@ from gastos_bot.logging_setup import get_logger
 log = get_logger("gastos_bot.extraction.gemini")
 
 
+def _motivo(exc: Exception) -> str:
+    """Mensaje corto del proveedor: 'código ESTADO: message' sin el JSON entero."""
+    texto = str(exc)
+    if "'message': '" in texto:
+        texto = texto.split("'message': '", 1)[1].split("'", 1)[0]
+    codigo = getattr(exc, "code", None)
+    return (f"{codigo} " if codigo else "") + texto[:160]
+
+
+def _reintentable(exc: Exception) -> bool:
+    codigo = getattr(exc, "code", None)
+    return codigo is None or int(codigo) in (408, 429, 500, 502, 503, 504)
+
+
 class GeminiExtractor:
     def __init__(self, api_key: str, modelo: str, client: Any | None = None) -> None:
         self.modelo = modelo
@@ -44,8 +58,9 @@ class GeminiExtractor:
                 model=self.modelo, contents=self._contenidos(entrada, categorias), config=config
             )
         except Exception as exc:  # el SDK lanza subclases propias; todas son de red/proveedor
-            log.warning("gemini_error", error=type(exc).__name__)
-            raise ExtraccionFallida(f"Gemini no respondió: {type(exc).__name__}") from exc
+            motivo = _motivo(exc)
+            log.warning("gemini_error", error=type(exc).__name__, motivo=motivo)
+            raise ExtraccionFallida(f"Gemini: {motivo}", reintentable=_reintentable(exc)) from exc
         texto = getattr(respuesta, "text", None)
         if not texto:
             raise ExtraccionFallida("Gemini devolvió una respuesta vacía", reintentable=False)
