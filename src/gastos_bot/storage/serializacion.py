@@ -12,7 +12,7 @@ from typing import Any
 
 from gastos_bot.domain.categorias import Rubro
 from gastos_bot.domain.fx import TipoCambioInvalido, a_usd
-from gastos_bot.domain.indicador import Indicador
+from gastos_bot.domain.indicador import Indicador, ResumenMes
 from gastos_bot.domain.models import (
     Config,
     Estado,
@@ -46,6 +46,14 @@ def _decimal(valor: str | float | int) -> Decimal:
         return Decimal(txt)
     except InvalidOperation as exc:
         raise ValueError(f"número inválido: {valor!r}") from exc
+
+
+def _porcentaje(valor: str) -> Decimal:
+    """El Sheet devuelve los porcentajes formateados: «23,33 %» → 0.2333; «0.2333» → 0.2333."""
+    txt = valor.strip()
+    if txt.endswith("%"):
+        return _decimal(txt[:-1]) / 100
+    return _decimal(txt)
 
 
 def _fecha(valor: str) -> date:
@@ -286,3 +294,32 @@ def indicador_a_fila(ind: Indicador) -> list[Any]:
         "cumplimiento": ind.cumplimiento.value,
     }
     return [valores[c] for c in schema.DASHBOARD_COLUMNAS]
+
+
+def filas_a_resumenes(filas: Sequence[Sequence[Any]]) -> list[ResumenMes]:
+    """Filas del Dashboard sin encabezado. Saltea las que no se entienden (R24)."""
+    c = schema.DASHBOARD_COLUMNAS.index
+    salida: list[ResumenMes] = []
+    for fila in filas:
+        mes = _campo(fila, c("mes"))
+        if not mes:
+            continue
+        try:
+            salida.append(
+                ResumenMes(
+                    mes=mes,
+                    ingreso_usd=_decimal(_campo(fila, c("ingreso_usd"))),
+                    necesidades_usd=_decimal(_campo(fila, c("necesidades_usd"))),
+                    necesidades_pct=_porcentaje(_campo(fila, c("necesidades_pct"))),
+                    deseos_usd=_decimal(_campo(fila, c("deseos_usd"))),
+                    deseos_pct=_porcentaje(_campo(fila, c("deseos_pct"))),
+                    ahorro_pct=_porcentaje(_campo(fila, c("ahorro_pct"))),
+                    ahorro_registrado_usd=_decimal(_campo(fila, c("ahorro_registrado_usd"))),
+                    inversion_usd=_decimal(_campo(fila, c("inversion_usd"))),
+                    n_registros=int(_decimal(_campo(fila, c("n_registros")))),
+                    cumplimiento=_campo(fila, c("cumplimiento")),
+                )
+            )
+        except (ValueError, IndexError):
+            continue
+    return salida

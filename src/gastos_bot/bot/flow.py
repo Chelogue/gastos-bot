@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
 
@@ -17,7 +17,8 @@ from gastos_bot.bot import keyboards as kb
 from gastos_bot.bot import messages as msg
 from gastos_bot.domain import ids, naming
 from gastos_bot.domain.categorias import Rubro
-from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos
+from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos, periodo_pedido
+from gastos_bot.domain.duplicados import buscar_duplicado
 from gastos_bot.domain.fx import a_usd
 from gastos_bot.domain.ids import mes_de_id
 from gastos_bot.domain.models import (
@@ -34,13 +35,7 @@ from gastos_bot.domain.models import (
     TipoDocExtraido,
 )
 from gastos_bot.domain.parseo import TextoInvalido, parsear_fecha, parsear_monto
-from gastos_bot.domain.quincena import (
-    a_local,
-    mes_anterior,
-    mes_de,
-    periodo_en_curso,
-    quincena_de,
-)
+from gastos_bot.domain.quincena import a_local, mes_anterior, mes_de, quincena_de
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida, Extractor
 from gastos_bot.logging_setup import bind_context, get_logger
 from gastos_bot.reports import quincenal
@@ -230,17 +225,21 @@ class Flujo:
 
     async def total(self, *, telegram_id: int, chat_id: int) -> None:
         """Cómo viene la quincena en curso: mismo cálculo que el reporte quincenal."""
+        await self.reporte(telegram_id=telegram_id, chat_id=chat_id)
+
+    async def reporte(self, *, telegram_id: int, chat_id: int, cual: str | None = None) -> None:
+        """``/reporte`` a demanda (R22): quincena en curso, la anterior o el mes entero."""
         with bind_context(telegram_id=telegram_id):
             if await self._persona(telegram_id, chat_id) is None:
                 return
             hoy = a_local(self.reloj(), self.zona).date()
-            periodo = periodo_en_curso(hoy)
+            periodo = periodo_pedido(cual, hoy)
             mes = periodo.mes.mes
             try:
                 config = await self.st.config.cargar()
                 tc = config.tc_del_mes(mes)
                 if tc is None:
-                    await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
+                    await self.tg.enviar(chat_id, msg.SIN_TC_CONSULTA.format(mes=mes))
                     return
                 gastos = await self.st.gastos.listar_mes(mes)
             except StorageError as exc:
@@ -256,6 +255,19 @@ class Flujo:
                 folder_id=config.carpetas.get(mes),
             )
             await self.tg.enviar(chat_id, msg.reporte(reporte))
+
+    async def dashboard(self, *, telegram_id: int, chat_id: int, meses: int = 6) -> None:
+        """La tabla mensual del Sheet, resumida en el chat (R24)."""
+        with bind_context(telegram_id=telegram_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            try:
+                filas = await self.st.dashboard.listar()
+            except StorageError as exc:
+                await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+                return
+            link = quincenal.link_sheet(self.sheet_id) if self.sheet_id else None
+            await self.tg.enviar(chat_id, msg.dashboard(filas[-meses:], link))
 
     async def ultimos(self, *, telegram_id: int, chat_id: int, cuantos: int = 10) -> None:
         """Los últimos movimientos con su ID, para poder editarlos o borrarlos."""
@@ -314,6 +326,34 @@ class Flujo:
                 origen=gasto.tipo_doc,
                 compartido=gasto.compartido,
                 gasto_id=gasto.id,
+                creado=ahora,
+                expira=ahora + self.ttl,
+            )
+            await self._mostrar_resumen(pendiente, chat_id)
+
+    async def repetir(
+        self, *, update_id: int, telegram_id: int, chat_id: int, gasto_id: str
+    ) -> None:
+        """Copia un gasto ya guardado con la fecha de hoy: alquiler, suscripciones (R23, ADR 0009).
+
+        No crea nada solo: abre la tarjeta con todo cargado y se confirma como cualquier alta.
+        """
+        with bind_context(telegram_id=telegram_id, gasto_id=gasto_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            gasto = await self._buscar_gasto(gasto_id, chat_id)
+            if gasto is None:
+                return
+            ahora = self.reloj()
+            hoy = a_local(ahora, self.zona).date()
+            pendiente = Pendiente(
+                pendiente_id=f"r-{secrets.token_hex(4)}",
+                update_id=update_id,
+                telegram_id=telegram_id,
+                extraccion=_como_extraccion(gasto).model_copy(update={"fecha": hoy}),
+                origen=TipoDoc.TEXTO,  # no hay comprobante nuevo
+                compartido=gasto.compartido,
+                repetido_de=gasto.id,
                 creado=ahora,
                 expira=ahora + self.ttl,
             )
@@ -503,6 +543,11 @@ class Flujo:
                     que = "compartido/personal" if p.compartido is None else "moneda y categoría"
                     return msg.TOAST_FALTA.format(que=que)
                 return await self._confirmar(p, persona, chat_id)
+            case kb.Accion.GUARDAR_IGUAL:
+                if not p.listo_para_guardar:
+                    await self._mostrar_resumen(p, chat_id)
+                    return None
+                return await self._confirmar(p, persona, chat_id, forzar=True)
         return None
 
     async def _pedir(self, p: Pendiente, chat_id: int, campo: CampoEsperado) -> None:
@@ -555,7 +600,9 @@ class Flujo:
 
     # ---------- confirmar (R4, R5, R16) ----------
 
-    async def _confirmar(self, p: Pendiente, persona: Persona, chat_id: int) -> str | None:
+    async def _confirmar(
+        self, p: Pendiente, persona: Persona, chat_id: int, forzar: bool = False
+    ) -> str | None:
         assert p.monto is not None and p.moneda is not None and p.subcategoria is not None
         if p.gasto_id:  # la tarjeta salió de /editar: no hay alta ni subida a Drive (R13)
             return await self._guardar_edicion(p, chat_id)
@@ -567,6 +614,16 @@ class Flujo:
         if tc is None:
             await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
             return msg.TC_FALTANTE.format(mes=mes)[:200]
+        if not forzar and (duplicado := await self._duplicado_de(p, mes, envio_local.date())):
+            log.info("posible_duplicado", gasto_id=duplicado.id)
+            await self.st.pendientes.guardar(p)
+            await self.tg.editar(
+                chat_id,
+                p.mensaje_tarjeta_id or 0,
+                msg.POSIBLE_DUPLICADO.format(resumen=msg.gasto_linea(duplicado)),
+                kb.confirmar_duplicado(p.pendiente_id),
+            )
+            return msg.TOAST_DUPLICADO
         catalogo = await self.st.categorias.catalogo()
         rubro = catalogo.rubro_de(p.subcategoria)
         e = p.extraccion
@@ -625,6 +682,21 @@ class Flujo:
         log.info("gasto_guardado", gasto_id=gasto.id, mes=mes)
         return msg.TOAST_OK
 
+    async def _duplicado_de(self, p: Pendiente, mes: str, hoy: date) -> Gasto | None:
+        """Busca un gasto parecido ya guardado (R20). Si Sheets falla, no bloquea el alta."""
+        assert p.monto is not None and p.moneda is not None
+        try:
+            del_mes = await self.st.gastos.listar_mes(mes)
+        except StorageError:
+            return None
+        return buscar_duplicado(
+            fecha=p.fecha or hoy,
+            monto=p.monto,
+            moneda=p.moneda,
+            comercio=p.extraccion.comercio,
+            gastos=del_mes,
+        )
+
     def _armar_gasto(
         self,
         p: Pendiente,
@@ -637,7 +709,8 @@ class Flujo:
     ) -> Gasto:
         e = p.extraccion
         assert p.monto is not None and p.moneda is not None and p.subcategoria is not None
-        notas = [x for x in (e.cuota, p.nota_caption) if x]
+        repetido = f"repetido de {p.repetido_de}" if p.repetido_de else None
+        notas = [x for x in (e.cuota, p.nota_caption, repetido) if x]
         if e.moneda_original:
             notas.append(f"original: {e.monto_original or '?'} {e.moneda_original}")
         tipo_doc = TipoDoc.TEXTO if p.origen is TipoDoc.TEXTO else TipoDoc(e.tipo_doc.value)

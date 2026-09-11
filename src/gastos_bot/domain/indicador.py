@@ -51,6 +51,26 @@ class RubroResumen:
 
 
 @dataclass(frozen=True)
+class ResumenMes:
+    """Una fila del Dashboard leída de vuelta, para mostrarla en el chat (R24).
+
+    No es un ``Indicador``: es lo que ya quedó escrito, sin recalcular nada.
+    """
+
+    mes: str
+    ingreso_usd: Decimal
+    necesidades_usd: Decimal
+    necesidades_pct: Decimal
+    deseos_usd: Decimal
+    deseos_pct: Decimal
+    ahorro_pct: Decimal
+    ahorro_registrado_usd: Decimal
+    inversion_usd: Decimal
+    n_registros: int
+    cumplimiento: str
+
+
+@dataclass(frozen=True)
 class Indicador:
     mes: str
     tc_uyu_usd: Decimal

@@ -14,7 +14,7 @@ from telegram.ext import ExtBot
 
 from gastos_bot.domain.categorias import Catalogo
 from gastos_bot.domain.fx import a_usd
-from gastos_bot.domain.indicador import Indicador
+from gastos_bot.domain.indicador import Indicador, ResumenMes
 from gastos_bot.domain.models import (
     Config,
     EstadoPendiente,
@@ -112,6 +112,7 @@ class FakeWorksheet:
         self.isSheetHidden = False
         self.values: list[list[str]] = []
         self.rows, self.cols = rows, cols
+        self.ultimo_render: str | None = None
 
     @property
     def index(self) -> int:
@@ -120,7 +121,8 @@ class FakeWorksheet:
     def row_values(self, n: int) -> list[str]:
         return list(self.values[n - 1]) if len(self.values) >= n else []
 
-    def get_all_values(self) -> list[list[str]]:
+    def get_all_values(self, **kwargs: Any) -> list[list[str]]:
+        self.ultimo_render = kwargs.get("value_render_option")
         return [list(r) for r in self.values]
 
     def update(self, values: list[list[Any]], range_name: str = "A1", **_kwargs: Any) -> None:
@@ -413,6 +415,26 @@ class FakeDashboardRepo:
 
     async def recalcular(self, indicador: Indicador) -> None:
         self.recalculos.append(indicador)
+
+    async def listar(self) -> list[ResumenMes]:
+        """Lo mismo que haría el Sheet: la última fila escrita por mes, en orden."""
+        por_mes: dict[str, Indicador] = {i.mes: i for i in self.recalculos}
+        return [
+            ResumenMes(
+                mes=i.mes,
+                ingreso_usd=i.ingreso_usd,
+                necesidades_usd=i.necesidades.gastado_usd,
+                necesidades_pct=i.necesidades.pct_ingreso,
+                deseos_usd=i.deseos.gastado_usd,
+                deseos_pct=i.deseos.pct_ingreso,
+                ahorro_pct=i.ahorro_pct,
+                ahorro_registrado_usd=i.ahorro_registrado_usd,
+                inversion_usd=i.inversion_usd,
+                n_registros=i.n_registros,
+                cumplimiento=i.cumplimiento.value,
+            )
+            for i in sorted(por_mes.values(), key=lambda x: x.mes)
+        ]
 
 
 class FakeMensajero:

@@ -290,3 +290,28 @@ async def test_drive_reusa_carpeta_existente_y_cache_de_config() -> None:
     assert api.carpetas[config.carpetas_guardadas["2026-09/Nikole"]] == ("viejo", "Nikole")
     await repo.subir(("2026-08", "Nikole"), "a.jpg", b"x", "image/jpeg")
     assert not any(c == "listar:root:True" and i > 0 for i, c in enumerate(api.llamadas[1:]))
+
+
+async def test_dashboard_se_puede_leer_de_vuelta(cliente: SheetsCliente) -> None:
+    repo = SheetsDashboardRepo(cliente)
+    assert await repo.listar() == []
+
+    def indicador(mes: str) -> Indicador:
+        return calcular(
+            mes,
+            [_gasto()],
+            ingreso_usd=Decimal("6350"),
+            tc_uyu_usd=Decimal("40"),
+            porcentajes=Porcentajes(),
+            personas=("Marcelo", "Nikole"),
+        )
+
+    await repo.recalcular(indicador("2026-09"))
+    await repo.recalcular(indicador("2026-08"))
+    resumenes = await repo.listar()
+    ws = cliente.hoja_o_error("Dashboard")
+    assert ws.ultimo_render == "UNFORMATTED_VALUE"  # si no, el Sheet devuelve redondeado
+    assert [r.mes for r in resumenes] == ["2026-08", "2026-09"]  # en orden cronológico
+    assert resumenes[0].n_registros == 1 and resumenes[0].cumplimiento == "✅"
+    assert resumenes[0].necesidades_usd == Decimal("31.25")
+    assert resumenes[0].ahorro_pct == Decimal("0.9951")

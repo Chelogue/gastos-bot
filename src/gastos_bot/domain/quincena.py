@@ -109,3 +109,11 @@ def periodo_en_curso(hoy: date) -> PeriodoReporte:
     return PeriodoReporte(
         quincena=rango_quincena(hoy), mes=rango_mes(hoy), cierre_de_mes=False, en_curso=True
     )
+
+
+def periodo_mes(hoy: date) -> PeriodoReporte:
+    """El mes entero como un solo período, para ``/reporte mes`` (R22)."""
+    rango = rango_mes(hoy)
+    return PeriodoReporte(
+        quincena=rango, mes=rango, cierre_de_mes=False, en_curso=hoy < rango.hasta
+    )

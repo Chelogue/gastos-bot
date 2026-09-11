@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from gastos_bot.domain.categorias import Catalogo
-from gastos_bot.domain.indicador import Indicador
+from gastos_bot.domain.indicador import Indicador, ResumenMes
 from gastos_bot.domain.models import Config, Gasto, Pendiente, TipoCambio
 
 
@@ -104,4 +104,8 @@ class DriveRepo(Protocol):
 class DashboardRepo(Protocol):
     async def recalcular(self, indicador: Indicador) -> None:
         """Reescribe la fila del mes en Dashboard (R10, D9)."""
+        ...
+
+    async def listar(self) -> list[ResumenMes]:
+        """Las filas ya escritas, de la más vieja a la más nueva (R24)."""
         ...

@@ -26,7 +26,10 @@ ALLOWED_UPDATES = ["message", "callback_query"]
 # El menú que Telegram muestra al tocar "/" en el chat.
 COMANDOS = [
     ("total", "Cómo viene la quincena"),
+    ("reporte", "Reporte: en curso, anterior o del mes"),
+    ("dashboard", "Resumen de los últimos meses"),
     ("ultimos", "Los últimos 10 gastos con su ID"),
+    ("repetir", "Repetir un gasto: /repetir G-260910-001"),
     ("editar", "Corregir un gasto: /editar G-260910-001"),
     ("borrar", "Dar de baja un gasto: /borrar G-260910-001"),
     ("ayuda", "Cómo se usa el bot"),

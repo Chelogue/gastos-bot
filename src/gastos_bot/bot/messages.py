@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
+from gastos_bot.domain.indicador import ResumenMes
 from gastos_bot.domain.models import Gasto, Moneda, Pendiente, Quincena, TipoDocExtraido
 from gastos_bot.reports.quincenal import Reporte
 
@@ -28,7 +29,10 @@ AYUDA = (
     "• También podés escribirlo sin foto: «450 uyu farmacia».\n\n"
     "Comandos:\n"
     "/total — cómo viene la quincena (o preguntame «cuánto llevamos»)\n"
+    "/reporte — el mismo reporte: sin nada, «anterior» o «mes»\n"
+    "/dashboard — resumen de los últimos meses\n"
     "/ultimos — los últimos 10 gastos con su ID\n"
+    "/repetir ID — copiar un gasto (alquiler, suscripciones)\n"
     "/editar ID — corregir un gasto ya guardado\n"
     "/borrar ID — darlo de baja (la fila y la foto quedan)"
 )
@@ -70,9 +74,23 @@ BORRAR_CONFIRMAR = (
 )
 BORRADO = "🗑️ Borré {id}. Queda en el Sheet como eliminado y ya no cuenta en el Dashboard."
 BORRAR_CANCELADO = "Listo, no toqué nada."
+POSIBLE_DUPLICADO = (
+    "⚠️ Esto se parece a algo que ya está guardado:\n\n{resumen}\n\n"
+    "Si es el mismo gasto, descartalo. Si de verdad gastaste dos veces, guardalo igual."
+)
+TOAST_DUPLICADO = "Fijate: parece repetido."
 EDITANDO = "✏️ Editando {id}"
+REPITIENDO = "🔁 Repetido de {id}"
+USO_REPETIR = (
+    "Usá /repetir <ID>, por ejemplo /repetir G-260910-001. Sirve para el alquiler o una "
+    "suscripción: copia el gasto con la fecha de hoy y vos confirmás."
+)
 EDITADO = "✏️ Actualicé {id}\n{resumen}"
+SIN_DASHBOARD = "Todavía no hay meses en el Dashboard. Registrá un gasto y aparece."
 SIN_GASTOS = "Todavía no hay gastos registrados. Mandame una foto o escribime «450 uyu farmacia»."
+SIN_TC_CONSULTA = (
+    "No puedo calcular {mes}: falta el tipo de cambio de ese mes en la pestaña Config del Sheet."
+)
 REPORTE_SIN_TC = (
     "Tenía que mandarles el reporte de {mes}, pero falta el tipo de cambio del mes en la pestaña "
     "Config. Cargalo y les mando el reporte con /reporte."
@@ -142,11 +160,12 @@ def resumen(p: Pendiente, rubro: str | None) -> str:
     monto_editado = " ✏️" if ed.monto is not None or ed.moneda is not None else ""
     fecha = p.fecha.isoformat() if p.fecha else "fecha de hoy"
     # Editando un gasto ya guardado (R13) el tipo de documento no aporta: manda el ID.
-    titulo = (
-        EDITANDO.format(id=p.gasto_id)
-        if p.gasto_id
-        else f"{rojo}{_TIPO_DOC[e.tipo_doc].capitalize()}"
-    )
+    if p.gasto_id:
+        titulo = EDITANDO.format(id=p.gasto_id)
+    elif p.repetido_de:
+        titulo = REPITIENDO.format(id=p.repetido_de)
+    else:
+        titulo = f"{rojo}{_TIPO_DOC[e.tipo_doc].capitalize()}"
     lineas = [
         f"{titulo} · {quien[p.compartido]}",
         f"💰 {monto_fmt(p.monto, p.moneda)}{monto_editado}",
@@ -215,7 +234,7 @@ def _linea_rubro(etiqueta: str, gastado: Decimal, tope: Decimal, usado: Decimal)
 def reporte(r: Reporte) -> str:
     """Reporte quincenal (R9). Los números salen de reports/quincenal.py; acá solo se redacta."""
     nombres_q = {Quincena.Q1: "primera quincena", Quincena.Q2: "segunda quincena"}
-    nombre_q = nombres_q[r.quincena] if r.quincena is not None else "período"
+    nombre_q = nombres_q[r.quincena] if r.quincena is not None else "el mes"
     mes = mes_largo(r.mes)
     encabezado = f"Cierre de {mes}" if r.cierre_de_mes else mes.capitalize()
     dias = f"{int(r.desde[8:])} al {int(r.hasta[8:])}"
@@ -296,3 +315,28 @@ def gasto_linea(g: Gasto) -> str:
         f"{g.id} · {g.fecha_gasto:%d/%m} · {g.comercio or 'sin comercio'} · "
         f"{monto_fmt(g.monto, g.moneda)} · {g.subcategoria} ({g.quien_subio})"
     )
+
+
+def dashboard(meses: Sequence[ResumenMes], link_sheet: str | None = None) -> str:
+    """La tabla del Dashboard resumida para leer en el teléfono (R24)."""
+    if not meses:
+        return SIN_DASHBOARD
+    plural = "mes" if len(meses) == 1 else f"últimos {len(meses)} meses"
+    lineas = [f"📈 Dashboard · {plural}", ""]
+    for m in meses:
+        lineas.append(f"{mes_largo(m.mes).capitalize()} {m.cumplimiento}".strip())
+        lineas.append(
+            f"• Necesidades {usd(m.necesidades_usd)} ({pct(m.necesidades_pct)}) · "
+            f"Deseos {usd(m.deseos_usd)} ({pct(m.deseos_pct)})"
+        )
+        apartado = [f"Ahorro {pct(m.ahorro_pct)} del ingreso"]
+        if m.inversion_usd:
+            apartado.append(f"invertido {usd(m.inversion_usd)}")
+        if m.ahorro_registrado_usd:
+            apartado.append(f"guardado {usd(m.ahorro_registrado_usd)}")
+        movimientos = "movimiento" if m.n_registros == 1 else "movimientos"
+        lineas.append(f"• {' · '.join(apartado)} · {m.n_registros} {movimientos}")
+        lineas.append("")
+    if link_sheet:
+        lineas.append(f"📄 La tabla completa: {link_sheet}")
+    return "\n".join(lineas).strip()

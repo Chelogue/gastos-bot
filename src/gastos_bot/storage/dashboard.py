@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from gastos_bot.domain.indicador import Indicador, calcular, ingreso_conjunto_usd
+from gastos_bot.domain.indicador import Indicador, ResumenMes, calcular, ingreso_conjunto_usd
 from gastos_bot.domain.models import Config
 from gastos_bot.storage import sheet_schema as schema
 from gastos_bot.storage.base import DashboardRepo, GastosRepo
-from gastos_bot.storage.serializacion import indicador_a_fila
+from gastos_bot.storage.serializacion import filas_a_resumenes, indicador_a_fila
 from gastos_bot.storage.sheets import SheetsCliente, en_hilo
 
 
@@ -38,6 +38,15 @@ async def recalcular_mes(
 class SheetsDashboardRepo:
     def __init__(self, cliente: SheetsCliente) -> None:
         self._c = cliente
+
+    async def listar(self) -> list[ResumenMes]:
+        def leer() -> list[ResumenMes]:
+            ws = self._c.hoja_o_error(schema.TAB_DASHBOARD)
+            # Sin formatear: las celdas se muestran redondeadas y perderíamos los centavos.
+            filas = ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
+            return filas_a_resumenes(filas[1:])
+
+        return await en_hilo(leer)
 
     async def recalcular(self, indicador: Indicador) -> None:
         def escribir() -> None:
