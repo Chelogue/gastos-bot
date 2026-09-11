@@ -56,6 +56,16 @@ class Settings(BaseSettings):
         "Ver ADR 0006 y scripts/autorizar_google.py.",
     )
 
+    # Jobs (R14): Cloud Scheduler llama /jobs/* con un token OIDC de esta service account.
+    jobs_oidc_email: str | None = Field(
+        default=None,
+        description="Service account que firma el token OIDC de Cloud Scheduler. Sin esto, "
+        "/jobs/* solo acepta el secret de Telegram (disparo manual).",
+    )
+    jobs_audience: str | None = Field(
+        default=None, description="``aud`` esperado; por defecto, la URL del request."
+    )
+
     # App
     tz: str = "America/Montevideo"
     pendiente_ttl_hours: int = Field(default=48, gt=0)
