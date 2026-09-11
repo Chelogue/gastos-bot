@@ -111,7 +111,8 @@ async def require_job_auth(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
     verificar: VerificadorOidc = getattr(request.app.state, "verificar_oidc", verificar_con_google)
-    audiencia = settings.jobs_audience or str(request.url)
+    url = request.url
+    audiencia = settings.jobs_audience or f"{url.scheme}://{url.netloc}{url.path}"
     try:
         claims = await asyncio.to_thread(verificar, token, audiencia)
     except Exception as exc:

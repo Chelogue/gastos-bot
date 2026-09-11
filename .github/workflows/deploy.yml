@@ -54,7 +54,7 @@ jobs:
             --allow-unauthenticated \
             --min-instances 0 --max-instances 2 --concurrency 4 \
             --cpu 1 --memory 512Mi --timeout 120 --cpu-boost \
-            --set-env-vars "^|^LLM_PROVIDER=gemini|LLM_MODEL=${{ vars.LLM_MODEL }}|GOOGLE_SHEET_ID=${{ vars.GOOGLE_SHEET_ID }}|GOOGLE_DRIVE_ROOT_FOLDER_ID=${{ vars.GOOGLE_DRIVE_ROOT_FOLDER_ID }}|TELEGRAM_ALLOWED_IDS=${{ vars.TELEGRAM_ALLOWED_IDS }}|TZ=America/Montevideo|PENDIENTE_TTL_HOURS=48|LOG_LEVEL=INFO|LOG_FORMAT=json" \
+            --set-env-vars "^|^LLM_PROVIDER=gemini|LLM_MODEL=${{ vars.LLM_MODEL }}|GOOGLE_SHEET_ID=${{ vars.GOOGLE_SHEET_ID }}|GOOGLE_DRIVE_ROOT_FOLDER_ID=${{ vars.GOOGLE_DRIVE_ROOT_FOLDER_ID }}|TELEGRAM_ALLOWED_IDS=${{ vars.TELEGRAM_ALLOWED_IDS }}|JOBS_OIDC_EMAIL=gastos-bot-sa@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com|JOBS_AUDIENCE=${{ vars.CLOUD_RUN_URL }}|TZ=America/Montevideo|PENDIENTE_TTL_HOURS=48|LOG_LEVEL=INFO|LOG_FORMAT=json" \
             --set-secrets "TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,LLM_API_KEY=LLM_API_KEY:latest,GOOGLE_OAUTH_TOKEN_JSON=GOOGLE_OAUTH_TOKEN_JSON:latest"
 
       - name: Health

@@ -18,8 +18,7 @@ Bot de Telegram para que dos personas registren gastos con una foto, los archive
 uv sync --all-extras
 cp .env.example .env            # completar valores (ver abajo)
 uv run pytest                   # sin red ni credenciales
-gcloud auth application-default login \
-  --impersonate-service-account=gastos-bot-sa@<PROJECT_ID>.iam.gserviceaccount.com
+uv run python scripts/autorizar_google.py    # abre el navegador y deja el token en .env (ADR 0006)
 uv run python scripts/create_sheet.py --ids Marcelo=<id>,Nikole=<id>   # crea/repara el Sheet
 ./scripts/run_local.sh          # uvicorn + túnel cloudflared
 uv run python scripts/set_webhook.py --url https://<tunel>.trycloudflare.com/webhook
@@ -35,15 +34,25 @@ Qué va en `.env`:
 | `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` | `gemini` + `gemini-3.6-flash` + key de AI Studio (tier pago) |
 | `GOOGLE_SHEET_ID` | el ID en la URL del Sheet (creá uno vacío y compartilo como editor con tu cuenta y con la service account) |
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID` | el ID en la URL de la carpeta `Gastos/` en Drive (compartida igual) |
-| `GOOGLE_APPLICATION_CREDENTIALS` | vacío: en local ADC impersona a la service account (ver nota); en Cloud Run se usa la SA nativa |
+| `GOOGLE_OAUTH_TOKEN_JSON` | lo escribe `scripts/autorizar_google.py` (necesita `GOOGLE_OAUTH_CLIENT_ID` y `GOOGLE_OAUTH_CLIENT_SECRET` del cliente de escritorio) |
+| `JOBS_OIDC_EMAIL` / `JOBS_AUDIENCE` | solo en Cloud Run: los pone el deploy para validar las llamadas de Cloud Scheduler |
 
-**Por qué impersonar y no pedir scopes de Drive:** Google bloquea el cliente OAuth de gcloud
-cuando pide el scope de Drive ("Se bloqueó esta app"). Con `--impersonate-service-account` las
-credenciales locales piden tokens en nombre de la service account del bot, que ya es editora del
-Sheet y de la carpeta, y no hace falta ningún JSON key. Requiere ser Owner del proyecto o tener
-`roles/iam.serviceAccountTokenCreator` sobre esa cuenta.
+**Por qué un token de usuario y no la service account:** una service account no tiene cuota de
+Drive (sube y falla con `storageQuotaExceeded`), así que Drive y Sheets se usan con el token OAuth
+de Marcelo (ADR 0006). Los archivos quedan en su Drive, dentro de la carpeta compartida.
 
-Las imágenes que sube la service account quedan en la carpeta compartida pero cuentan contra la cuota de la service account (15 GB): sobra por años.
+## Jobs (tipo de cambio y reporte)
+
+Cloud Scheduler llama dos endpoints con un token OIDC que el servicio verifica (R14):
+
+| Job | Cuándo | Qué hace |
+|---|---|---|
+| `POST /jobs/fx` | día 1, 00:05 | fija el UYU/USD del mes en `Config` (ADR 0007), reconvierte las filas del mes y recalcula el Dashboard |
+| `POST /jobs/reporte` | días 1 y 16, 09:00 | manda a los dos el reporte de la quincena que cerró, con el avance del mes contra los topes 50/30/20 |
+
+Se crean con `infra/setup_scheduler.sh <PROJECT_ID> us-central1` (idempotente, free tier). Para
+dispararlos a mano, `gcloud scheduler jobs run gastos-bot-fx --location us-central1`. Detalles y
+diagnóstico en `docs/runbook.md`.
 
 ## Bake-off de modelos (R19)
 
