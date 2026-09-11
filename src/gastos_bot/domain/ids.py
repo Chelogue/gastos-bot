@@ -19,6 +19,21 @@ def secuencia_de(gasto_id: str) -> tuple[str, int] | None:
     return (m.group(1), int(m.group(2))) if m else None
 
 
+def mes_de_id(gasto_id: str) -> str | None:
+    """``G-260910-001`` → ``2026-09``: el ID trae la fecha de envío, que es la pestaña del mes.
+
+    Así ``/borrar`` y ``/editar`` van directo a la pestaña correcta sin recorrer el Sheet entero.
+    """
+    partes = secuencia_de(gasto_id.strip().upper())
+    if partes is None:
+        return None
+    dia = partes[0]
+    mes = int(dia[2:4])
+    if not 1 <= mes <= 12:
+        return None
+    return f"20{dia[:2]}-{dia[2:4]}"
+
+
 def generar_id(fecha_envio: date, ids_existentes: Iterable[str]) -> str:
     """El siguiente número libre del día, mirando los IDs que ya hay en la pestaña del mes.
     Pasa de 999 sin romperse (G-260909-1000)."""

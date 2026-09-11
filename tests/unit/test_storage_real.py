@@ -12,6 +12,7 @@ from gastos_bot.domain.indicador import Indicador, calcular
 from gastos_bot.domain.models import (
     CampoEsperado,
     Config,
+    Estado,
     EstadoPendiente,
     Extraccion,
     Gasto,
@@ -137,6 +138,32 @@ async def test_reconvertir_mes_reescribe_tc_y_usd(cliente: SheetsCliente) -> Non
     assert [g.id for g in listado] == ["G-260910-001", "G-260910-002"]  # nada más se tocó
     assert await repo.reconvertir_mes("2026-09", Decimal("50")) == 0  # idempotente
     assert await repo.reconvertir_mes("2026-11", Decimal("50")) == 0  # mes sin pestaña
+
+
+async def test_obtener_y_actualizar_un_gasto_por_id(cliente: SheetsCliente) -> None:
+    repo = SheetsGastosRepo(cliente)
+    await repo.agregar(_gasto("G-260910-001"))
+    await repo.agregar(_gasto("G-260910-002", dia=12))
+
+    encontrado = await repo.obtener("g-260910-002")  # tolerante a minúsculas
+    assert encontrado is not None and encontrado.fecha_gasto == date(2026, 9, 12)
+    assert await repo.obtener("G-260910-009") is None  # no existe
+    assert await repo.obtener("G-261010-001") is None  # mes sin pestaña
+    assert await repo.obtener("no-es-un-id") is None
+
+    eliminado = encontrado.model_copy(
+        update={
+            "estado": Estado.ELIMINADO,
+            "fecha_modificacion": AHORA.replace(tzinfo=None),
+            "nota": "me arrepentí",
+        }
+    )
+    assert await repo.actualizar(eliminado) is True
+    listado = await repo.listar_mes("2026-09")
+    assert [g.id for g in listado] == ["G-260910-001", "G-260910-002"]  # no se movió de lugar
+    assert listado[1].estado is Estado.ELIMINADO and listado[1].nota == "me arrepentí"
+    assert listado[0].estado is Estado.ACTIVO
+    assert await repo.actualizar(_gasto("G-260910-777")) is False
 
 
 async def test_falta_pestana_es_storage_error() -> None:
