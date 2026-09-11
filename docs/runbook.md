@@ -108,6 +108,17 @@ uv run python scripts/recalc_dashboard.py
 
 para reescribir las filas de cada mes con el orden de columnas nuevo.
 
+## El tablero de Looker Studio quedó vacío
+
+Mirá la celda `Movimientos!A2`: tiene que tener la fórmula que apila las pestañas de mes
+(ADR 0011). Si alguien la borró o quedó `#ERROR!`, se repone con:
+
+```bash
+uv run python scripts/create_sheet.py
+```
+
+Los pasos para armar el tablero están en `docs/looker.md`.
+
 ## Reparar el Sheet
 
 `uv run python scripts/create_sheet.py` es idempotente: crea lo que falte (pestañas, encabezados,

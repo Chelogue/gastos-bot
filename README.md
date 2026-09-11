@@ -3,6 +3,7 @@
 Bot de Telegram para que dos personas registren gastos con una foto, los archiven en Google Drive, los organicen en Google Sheets y reciban un reporte quincenal con la regla 50/30/20.
 
 - **Producto:** `docs/PRD.md` (fuente de verdad)
+- **Tablero:** `docs/looker.md` (Looker Studio sobre el Sheet)
 - **Código y prácticas:** `docs/estructura.md`
 - **Reglas para Claude Code:** `CLAUDE.md`
 - **Decisiones:** `docs/decisions/`
