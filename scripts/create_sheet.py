@@ -50,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sheet-id", help="ID del Sheet (por defecto GOOGLE_SHEET_ID)")
     parser.add_argument("--ids", help="IDs de Telegram: Marcelo=111,Nikole=222")
     parser.add_argument("--share-with", help="email de la service account a la que dar editor")
+    parser.add_argument(
+        "--reescribir-encabezados",
+        action="store_true",
+        help="pisa la fila 1 con las etiquetas del esquema actual (migrar columnas nuevas)",
+    )
     args = parser.parse_args(argv)
 
     settings = ScriptSettings()
@@ -62,7 +67,12 @@ def main(argv: list[str] | None = None) -> int:
         SCOPES_TODOS, settings.google_application_credentials, settings.google_oauth_token_json
     )
     sh = gspread.authorize(creds).open_by_key(sheet_id)
-    resultado = asegurar_estructura(sh, telegram_ids=parse_ids(args.ids), hoy=date.today())
+    resultado = asegurar_estructura(
+        sh,
+        telegram_ids=parse_ids(args.ids),
+        hoy=date.today(),
+        forzar_encabezados=args.reescribir_encabezados,
+    )
 
     print(f"Sheet: {sh.title} ({sheet_id})")
     if resultado.sin_cambios:

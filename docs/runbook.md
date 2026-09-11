@@ -89,6 +89,25 @@ versión nueva del secreto. El cliente OAuth está en Google Auth Platform → C
 - **Secret del webhook:** nueva versión del secreto + redeploy + `set_webhook.py --url ...`.
 - **Key del LLM:** nueva versión de `LLM_API_KEY` + redeploy.
 
+## Cambiar las columnas del Sheet
+
+Cuando el esquema suma o renombra una columna (p. ej. `inversion_usd`, ADR 0008), después de
+desplegar hay que migrar el Sheet una vez, en este orden:
+
+```bash
+uv run python scripts/create_sheet.py --reescribir-encabezados
+```
+
+Eso ensancha la grilla, reescribe la fila 1 con las etiquetas nuevas y crea los gráficos que
+falten. Sin `--reescribir-encabezados` el script avisa y no toca un encabezado que no reconoce,
+que es lo que queremos en el uso normal. Después:
+
+```bash
+uv run python scripts/recalc_dashboard.py
+```
+
+para reescribir las filas de cada mes con el orden de columnas nuevo.
+
 ## Reparar el Sheet
 
 `uv run python scripts/create_sheet.py` es idempotente: crea lo que falte (pestañas, encabezados,

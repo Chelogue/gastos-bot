@@ -159,3 +159,20 @@ def test_una_columna_nueva_en_el_esquema_ensancha_la_grilla() -> None:
     ultimos = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     assert ultimos.sin_cambios
     assert not any("appendDimension" in q for q in sh.batch_calls[-1]["requests"])
+
+
+def test_forzar_encabezados_migra_una_fila_1_vieja() -> None:
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    dashboard = next(ws for ws in sh.worksheets() if ws.title == "Dashboard")
+    viejo = list(dashboard.row_values(1))
+    viejo[11] = "Ahorro declarado (USD)"  # etiqueta de la versión anterior
+    dashboard.update(values=[viejo], range_name="A1")
+
+    con_aviso = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    assert any("no coincide con el esquema" in a for a in con_aviso.avisos)
+    assert dashboard.row_values(1) == viejo  # sin forzar no se toca
+
+    migrado = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY, forzar_encabezados=True)
+    assert migrado.avisos == []
+    assert dashboard.row_values(1) == list(estilo.etiquetas("Dashboard", schema.DASHBOARD_COLUMNAS))

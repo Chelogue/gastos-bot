@@ -36,7 +36,12 @@ def _por_titulo(sh: Any) -> dict[str, Any]:
 
 
 def _asegurar_pestana(
-    sh: Any, titulo: str, columnas: tuple[str, ...], resultado: Resultado, index: int | None = None
+    sh: Any,
+    titulo: str,
+    columnas: tuple[str, ...],
+    resultado: Resultado,
+    index: int | None = None,
+    forzar_encabezado: bool = False,
 ) -> Any:
     ws = _por_titulo(sh).get(titulo)
     if ws is None:
@@ -46,8 +51,8 @@ def _asegurar_pestana(
         resultado.creadas.append(titulo)
     visibles = estilo.etiquetas(titulo, columnas)
     encabezado = tuple(ws.row_values(1)[: len(columnas)])
-    if not any(encabezado) or encabezado == columnas:
-        # Vacío o con las claves técnicas de una versión anterior: se escriben las etiquetas.
+    if not any(encabezado) or encabezado == columnas or forzar_encabezado:
+        # Vacío, con las claves técnicas de una versión anterior, o migración explícita.
         if encabezado != visibles:
             ws.update(values=[list(visibles)], range_name="A1")
     elif encabezado != visibles:
@@ -300,17 +305,33 @@ def _graficos(sheet_id: int, meta: _Meta, resultado: Resultado) -> list[dict[str
 
 
 def asegurar_estructura(
-    sh: Any, *, telegram_ids: Mapping[str, int | None], hoy: date, vigente_desde: date | None = None
+    sh: Any,
+    *,
+    telegram_ids: Mapping[str, int | None],
+    hoy: date,
+    vigente_desde: date | None = None,
+    forzar_encabezados: bool = False,
 ) -> Resultado:
+    """``forzar_encabezados`` reescribe la fila 1 aunque no coincida con el esquema: es para
+    migrar cuando cambian las columnas, no para el uso normal (ver runbook)."""
     resultado = Resultado()
     vigente_desde = vigente_desde or hoy.replace(day=1)
     mes = schema.nombre_pestana_mes(hoy)
 
-    dashboard = _asegurar_pestana(sh, schema.TAB_DASHBOARD, schema.DASHBOARD_COLUMNAS, resultado, 0)
+    forzar = forzar_encabezados
+    dashboard = _asegurar_pestana(
+        sh, schema.TAB_DASHBOARD, schema.DASHBOARD_COLUMNAS, resultado, 0, forzar
+    )
     asegurar_pestana_mes(sh, mes, resultado)
-    config = _asegurar_pestana(sh, schema.TAB_CONFIG, schema.CONFIG_COLUMNAS, resultado)
-    categorias = _asegurar_pestana(sh, schema.TAB_CATEGORIAS, schema.CATEGORIAS_COLUMNAS, resultado)
-    pendientes = _asegurar_pestana(sh, schema.TAB_PENDIENTES, schema.PENDIENTES_COLUMNAS, resultado)
+    config = _asegurar_pestana(
+        sh, schema.TAB_CONFIG, schema.CONFIG_COLUMNAS, resultado, forzar_encabezado=forzar
+    )
+    categorias = _asegurar_pestana(
+        sh, schema.TAB_CATEGORIAS, schema.CATEGORIAS_COLUMNAS, resultado, forzar_encabezado=forzar
+    )
+    pendientes = _asegurar_pestana(
+        sh, schema.TAB_PENDIENTES, schema.PENDIENTES_COLUMNAS, resultado, forzar_encabezado=forzar
+    )
 
     _sembrar_filas(
         config,
@@ -341,7 +362,8 @@ def asegurar_estructura(
     requests += _diseno_dashboard(dashboard.id, meta_dashboard)
     for titulo, ws in _por_titulo(sh).items():
         if schema.es_pestana_de_mes(titulo):
-            _asegurar_pestana(sh, titulo, schema.MES_COLUMNAS, resultado)  # etiquetas al día
+            # etiquetas al día
+            _asegurar_pestana(sh, titulo, schema.MES_COLUMNAS, resultado, forzar_encabezado=forzar)
             m = meta.get(ws.id, vacio)
             requests += _ensanchar(ws.id, m, len(schema.MES_COLUMNAS))
             requests += _diseno_mes(ws.id, sin_bandas=m.tiene_bandas, reglas_previas=m.reglas)
