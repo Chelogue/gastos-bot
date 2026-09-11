@@ -213,6 +213,10 @@ def reporte(r: Reporte) -> str:
     else:
         lineas.append("No registraron gastos en esta quincena.")
 
+    if r.hubo_ahorro:  # apartar plata se cuenta aparte de gastarla (ADR 0008)
+        lineas += ["", f"Ahorro e inversión de la quincena: {usd(r.ahorro_usd)}"]
+        lineas += [f"• {sub}: {usd(monto)}" for sub, monto in r.ahorro_por_subcategoria]
+
     ind = r.indicador
     lineas += [
         "",
@@ -226,10 +230,11 @@ def reporte(r: Reporte) -> str:
         _linea_rubro(
             "Deseos", ind.deseos.gastado_usd, ind.deseos.tope_usd, ind.deseos.pct_del_tope
         ),
-        f"• Ahorro: {usd(ind.ahorro_residual_usd)}, {pct(ind.ahorro_pct)} del ingreso",
+        f"• Ahorro del mes: {usd(ind.ahorro_residual_usd)}, {pct(ind.ahorro_pct)} del ingreso",
     ]
-    if ind.ahorro_declarado_usd:
-        lineas.append(f"• Registrado como ahorro: {usd(ind.ahorro_declarado_usd)}")
+    if ind.ahorro_por_subcategoria:
+        detalle = " · ".join(f"{sub} {usd(monto)}" for sub, monto in ind.ahorro_por_subcategoria)
+        lineas.append(f"• De eso, ya apartado: {detalle}")
     if r.link_sheet:
         lineas += ["", f"📄 El Sheet: {r.link_sheet}"]
     if r.link_carpeta:

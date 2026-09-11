@@ -12,7 +12,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
-from gastos_bot.domain.categorias import Rubro
+from gastos_bot.domain.categorias import Rubro, es_inversion
 from gastos_bot.domain.fx import ingreso_en_usd
 from gastos_bot.domain.models import Config, Estado, Gasto, Porcentajes
 
@@ -59,7 +59,9 @@ class Indicador:
     deseos: RubroResumen
     ahorro_residual_usd: Decimal
     ahorro_pct: Decimal  # tasa de ahorro = métrica de eficiencia (G5)
-    ahorro_declarado_usd: Decimal
+    ahorro_declarado_usd: Decimal  # todo el rubro Ahorro: guardado + invertido + deuda extra
+    inversion_usd: Decimal  # la parte invertida, que se muestra aparte (ADR 0008)
+    ahorro_por_subcategoria: tuple[tuple[str, Decimal], ...]  # desglose, de mayor a menor
     ahorro_tope_usd: Decimal
     por_persona_usd: dict[str, Decimal]
     compartido_usd: Decimal
@@ -67,6 +69,11 @@ class Indicador:
     n_registros: int
     n_sin_editar_pct: Decimal
     cumplimiento: Cumplimiento
+
+    @property
+    def ahorro_registrado_usd(self) -> Decimal:
+        """Lo apartado que no es inversión. Con ``inversion_usd`` suman el rubro completo."""
+        return self.ahorro_declarado_usd - self.inversion_usd
 
 
 def _pct(parte: Decimal, total: Decimal) -> Decimal:
@@ -101,9 +108,14 @@ def calcular(
     activos = [g for g in gastos if g.estado is Estado.ACTIVO]
     por_rubro = {r: CERO for r in Rubro}
     por_persona = {p: CERO for p in personas}
-    compartido = personal = CERO
+    ahorro_por_sub: dict[str, Decimal] = {}
+    inversion = compartido = personal = CERO
     for g in activos:
         por_rubro[g.rubro] += g.monto_usd
+        if g.rubro is Rubro.AHORRO:
+            ahorro_por_sub[g.subcategoria] = ahorro_por_sub.get(g.subcategoria, CERO) + g.monto_usd
+            if es_inversion(g.subcategoria):
+                inversion += g.monto_usd
         por_persona[g.quien_subio] = por_persona.get(g.quien_subio, CERO) + g.monto_usd
         if g.compartido:
             compartido += g.monto_usd
@@ -142,6 +154,10 @@ def calcular(
         ahorro_residual_usd=residual,
         ahorro_pct=_pct(residual, ingreso_usd),
         ahorro_declarado_usd=por_rubro[Rubro.AHORRO],
+        inversion_usd=inversion,
+        ahorro_por_subcategoria=tuple(
+            sorted(ahorro_por_sub.items(), key=lambda par: (-par[1], par[0]))
+        ),
         ahorro_tope_usd=_tope(ingreso_usd, porcentajes.ahorro),
         por_persona_usd=por_persona,
         compartido_usd=compartido,

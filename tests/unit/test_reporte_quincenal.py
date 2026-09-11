@@ -85,6 +85,11 @@ MES = [
     _gasto(14, "9999", estado=Estado.ELIMINADO),  # no cuenta
     _gasto(20, "8000", sub="Vivienda"),  # 200 USD, Q2
 ]
+CON_AHORRO = [
+    *MES,
+    _gasto(5, "12000", sub="Inversión", rubro=Rubro.AHORRO),  # 300 USD, Q1
+    _gasto(8, "4000", sub="Ahorro", rubro=Rubro.AHORRO, quien="Nikole"),  # 100 USD, Q1
+]
 
 
 def test_dia_16_cuenta_la_primera_quincena_y_el_mes_hasta_ahora() -> None:
@@ -131,3 +136,35 @@ def test_quincena_sin_gastos_no_rompe() -> None:
     assert not r.hubo_gastos and r.total_usd == Decimal("0")
     assert r.por_subcategoria == ()
     assert r.indicador.n_registros == 0 and r.indicador.ahorro_pct == Decimal("1")
+
+
+def test_lo_apartado_no_cuenta_como_gasto_y_se_desglosa() -> None:
+    r = quincenal.armar(
+        periodo=periodo_reporte(date(2026, 9, 16)),
+        gastos_del_mes=CON_AHORRO,
+        config=_config(),
+        tc=TC,
+    )
+    # los tres gastos de la quincena siguen siendo tres: ahorro e inversión van por su lado
+    assert r.n_gastos == 3 and r.total_usd == Decimal("250")
+    assert r.por_persona == (("Marcelo", Decimal("150")), ("Nikole", Decimal("100")))
+    assert dict(r.por_subcategoria).keys() == {"Ocio", "Supermercado", "Transporte"}
+    assert r.uyu == Decimal("6000")  # sin los 12.000 de la inversión
+    assert r.hubo_ahorro and r.n_ahorro == 2 and r.ahorro_usd == Decimal("400")
+    assert r.ahorro_por_subcategoria == (
+        ("Inversión", Decimal("300")),
+        ("Ahorro", Decimal("100")),
+    )
+    assert r.indicador.inversion_usd == Decimal("300")
+    assert r.indicador.ahorro_registrado_usd == Decimal("100")
+
+
+def test_quincena_solo_con_inversion() -> None:
+    r = quincenal.armar(
+        periodo=periodo_reporte(date(2026, 9, 16)),
+        gastos_del_mes=[_gasto(5, "12000", sub="Inversión", rubro=Rubro.AHORRO)],
+        config=_config(),
+        tc=TC,
+    )
+    assert not r.hubo_gastos and r.hubo_ahorro
+    assert r.total_usd == Decimal("0") and r.ahorro_usd == Decimal("300")

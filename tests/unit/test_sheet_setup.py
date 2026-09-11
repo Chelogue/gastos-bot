@@ -32,7 +32,7 @@ def test_crea_todo_desde_cero_en_el_orden_del_prd() -> None:
     )
     assert por_titulo["Pendientes"].row_values(1)[0] == "ID pendiente"
     assert r.filas_agregadas == {"Config": 10, "Categorias": 17}
-    assert len(r.graficos_creados) == 3
+    assert len(r.graficos_creados) == len(schema.GRAFICOS)
     assert r.avisos == []
 
 
@@ -56,12 +56,12 @@ def test_segunda_corrida_no_cambia_nada() -> None:
     # la segunda corrida solo reaplica diseño (idempotente): ni orden, ni gráficos, ni bandas nuevas
     ultimos = sh.batch_calls[-1]["requests"]
     assert not any("addChart" in q or "addBanding" in q for q in ultimos)
-    assert sum(1 for q in ultimos if "updateEmbeddedObjectPosition" in q) == 3
+    assert sum(1 for q in ultimos if "updateEmbeddedObjectPosition" in q) == len(schema.GRAFICOS)
     meta = sh.fetch_sheet_metadata()["sheets"][0]
     assert len(meta["bandedRanges"]) == 1 and len(meta["conditionalFormats"]) == 5
     categorias = next(ws for ws in sh.worksheets() if ws.title == "Categorias")
     assert len(categorias.get_all_values()) == 1 + 17
-    assert len(sh.fetch_sheet_metadata()["sheets"][0]["charts"]) == 3
+    assert len(sh.fetch_sheet_metadata()["sheets"][0]["charts"]) == len(schema.GRAFICOS)
 
 
 def test_repara_lo_que_falta_sin_pisar_lo_editado() -> None:

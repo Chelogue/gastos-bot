@@ -43,7 +43,8 @@ DASHBOARD_COLUMNAS: tuple[str, ...] = (
     "deseos_tope_usd",
     "ahorro_residual_usd",
     "ahorro_pct",
-    "ahorro_declarado_usd",
+    "ahorro_registrado_usd",
+    "inversion_usd",
     "marcelo_usd",
     "nikole_usd",
     "compartido_usd",
@@ -173,6 +174,12 @@ GRAFICOS: tuple[GraficoSpec, ...] = (
         ("necesidades_usd", "necesidades_tope_usd", "deseos_usd", "deseos_tope_usd"),
     ),
     GraficoSpec("Total por persona (USD)", "COLUMN", ("marcelo_usd", "nikole_usd"), apilado=True),
+    GraficoSpec(
+        "Ahorro e inversión (USD)",
+        "COLUMN",
+        ("ahorro_registrado_usd", "inversion_usd"),
+        apilado=True,
+    ),
 )
 
 RUBROS: tuple[str, ...] = tuple(r.value for r in Rubro)

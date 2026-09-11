@@ -133,6 +133,8 @@ def test_indicador_a_fila() -> None:
     assert len(fila) == len(schema.DASHBOARD_COLUMNAS)
     assert fila[0] == "2026-09"
     assert fila[schema.DASHBOARD_COLUMNAS.index("marcelo_usd")] == 30.88
+    assert fila[schema.DASHBOARD_COLUMNAS.index("inversion_usd")] == 0.0
+    assert fila[schema.DASHBOARD_COLUMNAS.index("ahorro_registrado_usd")] == 0.0
     assert fila[schema.DASHBOARD_COLUMNAS.index("nikole_usd")] == 0.0
     assert fila[-1] == Cumplimiento.OK.value
 

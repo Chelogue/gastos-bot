@@ -58,7 +58,13 @@ def _config(tc: Decimal | None = TC, carpetas: dict[str, str] | None = None) -> 
     )
 
 
-def _gasto(dia: int, monto: str, sub: str = "Supermercado", quien: str = "Marcelo") -> Gasto:
+def _gasto(
+    dia: int,
+    monto: str,
+    sub: str = "Supermercado",
+    quien: str = "Marcelo",
+    rubro: Rubro = Rubro.NECESIDADES,
+) -> Gasto:
     envio = datetime(2026, 9, dia, 12, 0)
     return Gasto(
         id=f"G-2609{dia:02d}-001",
@@ -71,7 +77,7 @@ def _gasto(dia: int, monto: str, sub: str = "Supermercado", quien: str = "Marcel
         moneda=Moneda.UYU,
         tc_mes=TC,
         monto_usd=(Decimal(monto) / TC).quantize(Decimal("0.01")),
-        rubro=Rubro.NECESIDADES,
+        rubro=rubro,
         subcategoria=sub,
         tipo_doc=TipoDoc.FACTURA,
         quincena=quincena_de(envio.date()),
@@ -169,7 +175,7 @@ async def test_quincena_vacia_igual_manda_el_estado_del_mes() -> None:
     )
     texto = mensajero.enviados[0]["texto"]
     assert "No registraron gastos en esta quincena." in texto
-    assert "Ahorro: U$S 6.000,00, 100 % del ingreso" in texto
+    assert "Ahorro del mes: U$S 6.000,00, 100 % del ingreso" in texto
 
 
 def test_el_texto_agrupa_las_subcategorias_de_cola() -> None:
@@ -189,3 +195,23 @@ def test_el_texto_agrupa_las_subcategorias_de_cola() -> None:
     )
     texto = msg.reporte(r.__class__(**{**r.__dict__, "por_subcategoria": muchas}))
     assert f"• Otros ({len(muchas) - msg.TOPE_SUBCATEGORIAS}): U$S" in texto
+
+
+async def test_el_mensaje_separa_la_inversion_del_ahorro_y_del_gasto() -> None:
+    storage = await _storage(
+        _config(),
+        _gasto(3, "4000"),  # 100 USD de supermercado
+        _gasto(5, "12000", sub="Inversión", rubro=Rubro.AHORRO, quien="Nikole"),  # 300 USD
+        _gasto(6, "2000", sub="Ahorro", rubro=Rubro.AHORRO),  # 50 USD
+    )
+    mensajero = FakeMensajero()
+    await report_job.ejecutar(
+        storage=storage, avisador=mensajero, ahora=datetime(2026, 9, 16, 9, 0)
+    )
+    texto = mensajero.enviados[0]["texto"]
+    assert "Gastaron U$S 100,00 en 1 movimiento." in texto  # la inversión no es gasto
+    assert "Ahorro e inversión de la quincena: U$S 350,00" in texto
+    assert "• Inversión: U$S 300,00" in texto and "• Ahorro: U$S 50,00" in texto
+    assert "De eso, ya apartado: Inversión U$S 300,00 · Ahorro U$S 50,00" in texto
+    (indicador,) = storage.dashboard.recalculos  # type: ignore[attr-defined]
+    assert indicador.inversion_usd == Decimal("300")

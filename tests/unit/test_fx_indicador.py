@@ -38,6 +38,7 @@ def _gasto(
     compartido: bool = True,
     editado: bool = False,
     estado: Estado = Estado.ACTIVO,
+    subcategoria: str = "s",
 ) -> Gasto:
     return Gasto(
         id="G-260910-001",
@@ -51,7 +52,7 @@ def _gasto(
         tc_mes=TC,
         monto_usd=Decimal(monto_usd),
         rubro=rubro,
-        subcategoria="s",
+        subcategoria=subcategoria,
         tipo_doc=TipoDoc.FACTURA,
         quincena=Quincena.Q1,
         editado=editado,
@@ -138,3 +139,30 @@ def test_sin_ingreso_ni_gastos_no_divide_por_cero() -> None:
     assert ind.necesidades.pct_del_tope == Decimal("0")
     assert ind.cumplimiento is Cumplimiento.OK
     assert ind.por_persona_usd == {"Marcelo": Decimal("0"), "Nikole": Decimal("0")}
+
+
+def test_el_ahorro_se_desglosa_y_la_inversion_va_aparte() -> None:
+    ind = _calcular(
+        [
+            _gasto("200", Rubro.AHORRO, subcategoria="Ahorro"),
+            _gasto("500", Rubro.AHORRO, subcategoria="Inversión", quien="Nikole"),
+            _gasto("100", Rubro.AHORRO, subcategoria="Pago extra de deuda"),
+            _gasto("50", Rubro.AHORRO, subcategoria="inversion"),  # tolerante a tildes y mayúsculas
+            _gasto("999", Rubro.AHORRO, subcategoria="Inversión", estado=Estado.ELIMINADO),
+        ]
+    )
+    assert ind.ahorro_declarado_usd == Decimal("850")
+    assert ind.inversion_usd == Decimal("550")
+    assert ind.ahorro_registrado_usd == Decimal("300")
+    assert ind.ahorro_por_subcategoria == (
+        ("Inversión", Decimal("500")),
+        ("Ahorro", Decimal("200")),
+        ("Pago extra de deuda", Decimal("100")),
+        ("inversion", Decimal("50")),
+    )
+
+
+def test_sin_ahorro_registrado_el_desglose_queda_vacio() -> None:
+    ind = _calcular([_gasto("100", Rubro.NECESIDADES)])
+    assert ind.ahorro_por_subcategoria == ()
+    assert ind.inversion_usd == Decimal("0") and ind.ahorro_registrado_usd == Decimal("0")

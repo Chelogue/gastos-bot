@@ -41,6 +41,10 @@ CATEGORIAS_INICIALES: tuple[tuple[str, Rubro], ...] = (
 
 _VALORES_ACTIVA = {"sí", "si", "yes", "true", "1", "x"}
 
+SUBCATEGORIA_INVERSION = "Inversión"
+"""Dentro del rubro Ahorro, lo invertido se reporta aparte: no es lo mismo guardar que invertir
+(pedido de Marcelo, ADR 0008). El resto del rubro (Ahorro, Pago extra de deuda) va junto."""
+
 
 class CategoriaDesconocida(ValueError):
     pass
@@ -50,6 +54,11 @@ def _clave(texto: str) -> str:
     """Minúsculas, sin tildes ni espacios sobrantes: 'Educación ' → 'educacion'."""
     sin_tildes = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
     return " ".join(sin_tildes.lower().split())
+
+
+def es_inversion(subcategoria: str) -> bool:
+    """Tolerante a mayúsculas y tildes, como el resto de las búsquedas del catálogo."""
+    return _clave(subcategoria) == _clave(SUBCATEGORIA_INVERSION)
 
 
 @dataclass(frozen=True)
