@@ -142,3 +142,20 @@ def test_completa_ids_vacios_sin_pisar_los_existentes() -> None:
     assert r2.filas_agregadas == {"Config:Nikole": 1}
     ids = {f[1]: f[2] for f in config.get_all_values()[1:] if f[0] == "persona"}
     assert ids == {"Marcelo": "111", "Nikole": "222"}
+
+
+def test_una_columna_nueva_en_el_esquema_ensancha_la_grilla() -> None:
+    """Un Sheet creado con el esquema anterior tenía 19 columnas; Sheets rechaza formatear la 20."""
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    dashboard = next(ws for ws in sh.worksheets() if ws.title == "Dashboard")
+    dashboard.cols = len(schema.DASHBOARD_COLUMNAS) - 1  # como quedó antes de agregar la columna
+
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)  # no explota
+
+    assert dashboard.cols == len(schema.DASHBOARD_COLUMNAS)
+    assert dashboard.row_values(1) == list(estilo.etiquetas("Dashboard", schema.DASHBOARD_COLUMNAS))
+    # y la corrida siguiente ya no ensancha nada
+    ultimos = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    assert ultimos.sin_cambios
+    assert not any("appendDimension" in q for q in sh.batch_calls[-1]["requests"])

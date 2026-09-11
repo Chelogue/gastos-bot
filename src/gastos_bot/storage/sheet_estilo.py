@@ -206,6 +206,11 @@ def encabezado(sheet_id: int, n_cols: int, congelar_columnas: int = 0) -> list[d
     ]
 
 
+def agregar_columnas(sheet_id: int, cuantas: int) -> dict[str, Any]:
+    """Ensancha la grilla cuando el esquema suma columnas (si no, Sheets rechaza el formato)."""
+    return {"appendDimension": {"sheetId": sheet_id, "dimension": "COLUMNS", "length": cuantas}}
+
+
 def anchos(
     sheet_id: int, columnas: tuple[str, ...], tabla: dict[str, int], defecto: int = 110
 ) -> list[dict[str, Any]]:

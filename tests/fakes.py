@@ -150,7 +150,6 @@ class FakeWorksheet:
 
 _REQUESTS_IGNORADOS = (
     "repeatCell",
-    "updateDimensionProperties",
     "setDataValidation",
     "updateEmbeddedObjectPosition",
 )
@@ -199,6 +198,7 @@ class FakeSpreadsheet:
                         "title": ws.title,
                         "index": ws.index,
                         "hidden": ws.isSheetHidden,
+                        "gridProperties": {"rowCount": ws.rows, "columnCount": ws.cols},
                     },
                     "charts": list(self._charts.get(ws.id, [])),
                     "bandedRanges": list(self._bandas.get(ws.id, [])),
@@ -223,6 +223,23 @@ class FakeSpreadsheet:
                 if "index" in fields:
                     self._sheets.remove(ws)
                     self._sheets.insert(props["index"], ws)
+            elif "appendDimension" in req:
+                ap = req["appendDimension"]
+                ws = self._by_id(ap["sheetId"])
+                if ap["dimension"] == "COLUMNS":
+                    ws.cols += ap["length"]
+                else:
+                    ws.rows += ap["length"]
+            elif "updateDimensionProperties" in req:
+                rango = req["updateDimensionProperties"]["range"]
+                ws = self._by_id(rango["sheetId"])
+                limite = ws.cols if rango["dimension"] == "COLUMNS" else ws.rows
+                if rango["endIndex"] > limite:
+                    # mismo 400 que devuelve Sheets: no se puede formatear lo que no existe
+                    raise ValueError(
+                        f"Tried to update {rango['dimension']} index {rango['startIndex']} "
+                        f"but there are only {limite}"
+                    )
             elif "addChart" in req:
                 chart = dict(req["addChart"]["chart"])
                 sheet_id = chart["position"]["overlayPosition"]["anchorCell"]["sheetId"]

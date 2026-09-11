@@ -132,6 +132,7 @@ class _Meta:
     charts: dict[str, int]  # título → chartId
     tiene_bandas: bool
     reglas: int
+    columnas: int = 0  # las de la grilla, no las del esquema; 0 = no se pudo leer
 
 
 def _metadatos(sh: Any) -> dict[int, _Meta]:
@@ -142,12 +143,21 @@ def _metadatos(sh: Any) -> dict[int, _Meta]:
             ch.get("spec", {}).get("title", ""): ch.get("chartId", 0)
             for ch in hoja.get("charts", [])
         }
+        grid = hoja.get("properties", {}).get("gridProperties", {})
         salida[sid] = _Meta(
             charts=charts,
             tiene_bandas=bool(hoja.get("bandedRanges")),
             reglas=len(hoja.get("conditionalFormats", [])),
+            columnas=int(grid.get("columnCount", 0)),
         )
     return salida
+
+
+def _ensanchar(sheet_id: int, meta: _Meta, columnas: int) -> list[dict[str, Any]]:
+    """Si el esquema creció desde la última corrida, agrega las columnas que falten."""
+    if not meta.columnas or meta.columnas >= columnas:
+        return []
+    return [estilo.agregar_columnas(sheet_id, columnas - meta.columnas)]
 
 
 def _diseno_mes(sheet_id: int, *, sin_bandas: bool, reglas_previas: int) -> list[dict[str, Any]]:
@@ -326,11 +336,14 @@ def asegurar_estructura(
     meta = _metadatos(sh)
     vacio = _Meta(charts={}, tiene_bandas=False, reglas=0)
     requests: list[dict[str, Any]] = _requests_orden_y_ocultas(sh)
-    requests += _diseno_dashboard(dashboard.id, meta.get(dashboard.id, vacio))
+    meta_dashboard = meta.get(dashboard.id, vacio)
+    requests += _ensanchar(dashboard.id, meta_dashboard, len(schema.DASHBOARD_COLUMNAS))
+    requests += _diseno_dashboard(dashboard.id, meta_dashboard)
     for titulo, ws in _por_titulo(sh).items():
         if schema.es_pestana_de_mes(titulo):
             _asegurar_pestana(sh, titulo, schema.MES_COLUMNAS, resultado)  # etiquetas al día
             m = meta.get(ws.id, vacio)
+            requests += _ensanchar(ws.id, m, len(schema.MES_COLUMNAS))
             requests += _diseno_mes(ws.id, sin_bandas=m.tiene_bandas, reglas_previas=m.reglas)
     simples = (
         (config, schema.CONFIG_COLUMNAS, estilo.ANCHOS_CONFIG),
@@ -338,7 +351,9 @@ def asegurar_estructura(
         (pendientes, schema.PENDIENTES_COLUMNAS, estilo.ANCHOS_PENDIENTES),
     )
     for ws, columnas, anchos in simples:
-        requests += _diseno_tabla_simple(ws.id, columnas, anchos, meta.get(ws.id, vacio))
+        m = meta.get(ws.id, vacio)
+        requests += _ensanchar(ws.id, m, len(columnas))
+        requests += _diseno_tabla_simple(ws.id, columnas, anchos, m)
     requests += _graficos(dashboard.id, meta.get(dashboard.id, vacio), resultado)
 
     if requests:
