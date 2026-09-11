@@ -283,7 +283,7 @@ def ultimos(gastos: Sequence[Gasto]) -> str:
     """Listado con ID para poder corregir o borrar (R12)."""
     if not gastos:
         return SIN_GASTOS
-    lineas = [f"Últimos {len(gastos)} gastos:"]
+    lineas = ["Último gasto:" if len(gastos) == 1 else f"Últimos {len(gastos)} gastos:"]
     lineas += [f"• {gasto_linea(g)}" for g in gastos]
     lineas.append("")
     lineas.append("Para corregir: /editar <ID>. Para borrar: /borrar <ID>.")

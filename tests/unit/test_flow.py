@@ -384,7 +384,7 @@ async def test_ultimos_lista_con_id_y_como_corregir() -> None:
     await _guardar_un_gasto(m)
     await m.flujo.ultimos(telegram_id=MARCELO, chat_id=MARCELO)
     texto = m.tg.enviados[-1]["texto"]
-    assert "Últimos 1 gastos:" in texto
+    assert "Último gasto:" in texto
     assert "G-260910-001 · 03/09 · Disco · $ 1.250,50 · Supermercado (Marcelo)" in texto
     assert "/editar" in texto and "/borrar" in texto
 
