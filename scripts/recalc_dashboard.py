@@ -4,7 +4,8 @@ Uso:
     uv run python scripts/recalc_dashboard.py            # todos los meses con pestaña
     uv run python scripts/recalc_dashboard.py --mes 2026-09
 
-Útil tras editar a mano el tipo de cambio en Config (R7) o una fila de un mes.
+Tras editar a mano el tipo de cambio en Config (R7) también reconvierte ``monto_usd`` y
+``tc_mes`` de las filas del mes. Útil también si se corrigió una fila a mano.
 Lee GOOGLE_SHEET_ID y GOOGLE_APPLICATION_CREDENTIALS de .env (o usa ADC).
 """
 
@@ -13,13 +14,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import date
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from gastos_bot.domain.indicador import calcular, ingreso_conjunto_usd
 from gastos_bot.storage import sheet_schema as schema
-from gastos_bot.storage.dashboard import SheetsDashboardRepo
+from gastos_bot.storage.dashboard import SheetsDashboardRepo, recalcular_mes
 from gastos_bot.storage.google_auth import SCOPES_TODOS, get_credentials
 from gastos_bot.storage.sheets import SheetsCliente, SheetsConfigRepo, SheetsGastosRepo
 
@@ -41,20 +40,14 @@ async def recalcular(cliente: SheetsCliente, meses: list[str]) -> list[str]:
         if tc is None:
             salida.append(f"  {mes}: sin tipo de cambio en Config, salteado")
             continue
-        gastos = await gastos_repo.listar_mes(mes)
-        primer_dia = date.fromisoformat(f"{mes}-01")
-        indicador = calcular(
-            mes,
-            gastos,
-            ingreso_usd=ingreso_conjunto_usd(config, primer_dia, tc.valor),
-            tc_uyu_usd=tc.valor,
-            porcentajes=config.porcentajes,
-            personas=[p.nombre for p in config.personas],
+        reconvertidas = await gastos_repo.reconvertir_mes(mes, tc.valor)
+        indicador = await recalcular_mes(gastos_repo, dashboard, mes, config, tc.valor)
+        detalle = (
+            f" ({reconvertidas} filas reconvertidas al TC {tc.valor})" if reconvertidas else ""
         )
-        await dashboard.recalcular(indicador)
         salida.append(
             f"  {mes}: {indicador.n_registros} registros, ahorro {indicador.ahorro_pct:.1%} "
-            f"{indicador.cumplimiento.value}"
+            f"{indicador.cumplimiento.value}{detalle}"
         )
     return salida
 

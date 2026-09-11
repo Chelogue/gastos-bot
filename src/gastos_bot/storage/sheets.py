@@ -8,24 +8,46 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from decimal import Decimal
 from typing import Any
 
 from gastos_bot.domain.categorias import Catalogo
-from gastos_bot.domain.models import Config, Gasto
+from gastos_bot.domain.models import Config, Gasto, TipoCambio
 from gastos_bot.logging_setup import get_logger
 from gastos_bot.storage import sheet_schema as schema
 from gastos_bot.storage.base import StorageError
 from gastos_bot.storage.serializacion import (
     fila_carpeta,
+    fila_tc,
     filas_a_gastos,
     gasto_a_fila,
     parsear_config,
+    reconvertir_filas,
 )
 from gastos_bot.storage.sheet_setup import asegurar_pestana_mes
 
 log = get_logger("gastos_bot.storage.sheets")
 TTL_CACHE_S = 300.0
+
+
+def _letra(indice: int) -> str:
+    """0 → A, 25 → Z, 26 → AA."""
+    letras, n = "", indice + 1
+    while n:
+        n, resto = divmod(n - 1, 26)
+        letras = chr(ord("A") + resto) + letras
+    return letras
+
+
+def _rango(desde: str, hasta: str, fila_inicial: int, filas: int) -> str:
+    """Rango A1 de dos columnas del esquema del mes, p. ej. ``I2:J14``."""
+    c = schema.MES_COLUMNAS.index
+    return f"{_letra(c(desde))}{fila_inicial}:{_letra(c(hasta))}{fila_inicial + filas - 1}"
+
+
+def _celda(fila: Sequence[Any], i: int) -> str:
+    return str(fila[i]).strip() if i < len(fila) and fila[i] is not None else ""
 
 
 async def en_hilo[T](fn: Callable[[], T]) -> T:
@@ -105,6 +127,19 @@ class SheetsConfigRepo:
         await en_hilo(escribir)
         self._cache.invalidar()
 
+    async def guardar_tc(self, tc: TipoCambio, nota: str = "") -> None:
+        def escribir() -> None:
+            ws = self._c.hoja_o_error(schema.TAB_CONFIG)
+            fila = fila_tc(tc, nota)
+            for n, existente in enumerate(ws.get_all_values()[1:], start=2):
+                if _celda(existente, 0) == schema.CONFIG_TIPO_TC and _celda(existente, 1) == tc.mes:
+                    ws.update(values=[fila], range_name=f"A{n}")
+                    return
+            ws.append_rows([fila], value_input_option="USER_ENTERED")
+
+        await en_hilo(escribir)
+        self._cache.invalidar()
+
 
 class SheetsCategoriasRepo:
     def __init__(self, cliente: SheetsCliente, ttl_s: float = TTL_CACHE_S) -> None:
@@ -150,3 +185,22 @@ class SheetsGastosRepo:
             return filas_a_gastos(ws.get_all_values()[1:]) if ws is not None else []
 
         return await en_hilo(leer)
+
+    async def reconvertir_mes(self, mes: str, tc: Decimal) -> int:
+        """Reescribe solo las columnas tc_mes y monto_usd (contiguas) en una sola llamada."""
+
+        def escribir() -> int:
+            ws = self._c.hoja(mes)
+            if ws is None:
+                return 0
+            bloque, cambios = reconvertir_filas(ws.get_all_values()[1:], tc)
+            if cambios:
+                ws.update(
+                    values=bloque,
+                    range_name=_rango("tc_mes", "monto_usd", 2, len(bloque)),
+                    value_input_option="USER_ENTERED",
+                )
+                log.info("tc_reconvertido", mes=mes, filas=cambios)
+            return cambios
+
+        return await en_hilo(escribir)

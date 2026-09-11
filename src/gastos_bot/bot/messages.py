@@ -1,13 +1,16 @@
 """Todos los textos que ve el usuario en Telegram. Español rioplatense, tuteo.
 
-Solo strings y formato; nada de lógica de negocio. Cambiar un texto no toca código.
+Solo strings y formato; nada de lógica de negocio. Cambiar un texto no toca código. También vive
+acá el formato de números y porcentajes, para que la plata se vea igual en la tarjeta, en los
+avisos y en el reporte.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-from gastos_bot.domain.models import Moneda, Pendiente, TipoDocExtraido
+from gastos_bot.domain.models import Moneda, Pendiente, Quincena, TipoDocExtraido
+from gastos_bot.reports.quincenal import Reporte
 
 START = (
     "Hola, {nombre}. Mandame una foto de un comprobante o escribí un gasto "
@@ -38,6 +41,22 @@ GUARDADO_SIN_DASHBOARD = (
 TC_FALTANTE = (
     "Falta el tipo de cambio de {mes} en la pestaña Config del Sheet. Cargalo y tocá ✅ de nuevo."
 )
+FX_FIJADO = (
+    "Tipo de cambio de {mes}: {valor} pesos por dólar (fuente: {fuente}).\n"
+    "Todas las cuentas del mes usan ese número. Si querés otro, editalo en la pestaña Config."
+)
+FX_REUSADO = (
+    "No pude consultar la cotización ({motivo}). Dejé el tipo de cambio de {mes} en {valor}, "
+    "el mismo de {desde}.\nSi querés corregirlo, editalo en la pestaña Config del Sheet."
+)
+FX_SIN_DATO = (
+    "No pude fijar el tipo de cambio de {mes} ({motivo}) y no tengo uno anterior para reusar.\n"
+    "Cargalo a mano en la pestaña Config (fila tipo «tc»): sin eso no puedo guardar gastos."
+)
+REPORTE_SIN_TC = (
+    "Tenía que mandarles el reporte de {mes}, pero falta el tipo de cambio del mes en la pestaña "
+    "Config. Cargalo y les mando el reporte con /reporte."
+)
 PEDIR_MONTO = "Escribí el monto (negativo si es un reembolso). Ej.: 1250,50"
 PEDIR_FECHA = "Escribí la fecha del gasto. Ej.: 3/9, 03/09/2026 o «hoy»"
 PEDIR_MONTO_USD = "El comprobante está en {moneda}. Escribí cuánto fue en dólares (USD)."
@@ -61,13 +80,26 @@ _TIPO_DOC = {
 }
 
 
+def numero(valor: Decimal | float, decimales: int = 2) -> str:
+    """1234.5 → «1.234,50»: punto para miles y coma para decimales, como acá."""
+    return f"{valor:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def usd(valor: Decimal | float, decimales: int = 2) -> str:
+    return f"U$S {numero(valor, decimales)}"
+
+
+def pct(fraccion: Decimal | float, decimales: int = 0) -> str:
+    """0.2333 → «23 %»."""
+    return f"{numero(Decimal(str(fraccion)) * 100, decimales)} %"
+
+
 def monto_fmt(monto: Decimal | None, moneda: Moneda | None) -> str:
     if monto is None:
         return "monto: ?"
-    entero = f"{abs(monto):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     signo = "-" if monto < 0 else ""
     simbolo = {Moneda.UYU: "$", Moneda.USD: "U$S", None: "¿$ o U$S?"}[moneda]
-    return f"{signo}{simbolo} {entero}"
+    return f"{signo}{simbolo} {numero(abs(monto))}"
 
 
 def paso_1(p: Pendiente) -> str:
@@ -120,3 +152,86 @@ def resumen_guardado(p: Pendiente, rubro: str) -> str:
         f"{monto_fmt(p.monto, p.moneda)} · {p.extraccion.comercio or 'sin comercio'} · "
         f"{p.subcategoria} ({rubro}) · {'compartido' if p.compartido else 'personal'}"
     )
+
+
+MESES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "setiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+TOPE_SUBCATEGORIAS = 8
+
+
+def mes_largo(mes: str) -> str:
+    """``2026-09`` → ``setiembre``."""
+    try:
+        return MESES[int(mes[5:7]) - 1]
+    except (ValueError, IndexError):
+        return mes
+
+
+def _linea_rubro(etiqueta: str, gastado: Decimal, tope: Decimal, usado: Decimal) -> str:
+    return f"• {etiqueta}: {usd(gastado)} de {usd(tope)} ({pct(usado)} del tope)"
+
+
+def reporte(r: Reporte) -> str:
+    """Reporte quincenal (R9). Los números salen de reports/quincenal.py; acá solo se redacta."""
+    nombres_q = {Quincena.Q1: "primera quincena", Quincena.Q2: "segunda quincena"}
+    nombre_q = nombres_q[r.quincena] if r.quincena is not None else "período"
+    mes = mes_largo(r.mes)
+    encabezado = f"Cierre de {mes}" if r.cierre_de_mes else mes.capitalize()
+    lineas = [
+        f"📊 {encabezado} · {nombre_q} ({int(r.desde[8:])} al {int(r.hasta[8:])})",
+        "",
+    ]
+    if r.hubo_gastos:
+        movimientos = "movimiento" if r.n_gastos == 1 else "movimientos"
+        lineas.append(f"Gastaron {usd(r.total_usd)} en {r.n_gastos} {movimientos}.")
+        lineas += [f"• {nombre}: {usd(monto)}" for nombre, monto in r.por_persona]
+        monedas = []
+        if r.uyu:
+            monedas.append(f"$ {numero(r.uyu)}")
+        if r.usd:
+            monedas.append(usd(r.usd))
+        if monedas:
+            lineas.append("Por moneda: " + " y ".join(monedas))
+        lineas += ["", "En qué:"]
+        principales = r.por_subcategoria[:TOPE_SUBCATEGORIAS]
+        lineas += [f"• {sub}: {usd(monto)}" for sub, monto in principales]
+        resto = r.por_subcategoria[TOPE_SUBCATEGORIAS:]
+        if resto:
+            lineas.append(f"• Otros ({len(resto)}): {usd(sum(m for _, m in resto))}")
+    else:
+        lineas.append("No registraron gastos en esta quincena.")
+
+    ind = r.indicador
+    lineas += [
+        "",
+        f"{'Cómo cerró el mes' if r.cierre_de_mes else 'El mes hasta acá'} {ind.cumplimiento}",
+        _linea_rubro(
+            "Necesidades",
+            ind.necesidades.gastado_usd,
+            ind.necesidades.tope_usd,
+            ind.necesidades.pct_del_tope,
+        ),
+        _linea_rubro(
+            "Deseos", ind.deseos.gastado_usd, ind.deseos.tope_usd, ind.deseos.pct_del_tope
+        ),
+        f"• Ahorro: {usd(ind.ahorro_residual_usd)}, {pct(ind.ahorro_pct)} del ingreso",
+    ]
+    if ind.ahorro_declarado_usd:
+        lineas.append(f"• Registrado como ahorro: {usd(ind.ahorro_declarado_usd)}")
+    if r.link_sheet:
+        lineas += ["", f"📄 El Sheet: {r.link_sheet}"]
+    if r.link_carpeta:
+        lineas.append(f"📁 Los comprobantes de {mes_largo(r.mes)}: {r.link_carpeta}")
+    return "\n".join(lineas)

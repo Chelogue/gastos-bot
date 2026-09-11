@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from gastos_bot.domain.categorias import Rubro
+from gastos_bot.domain.fx import TipoCambioInvalido, a_usd
 from gastos_bot.domain.indicador import Indicador
 from gastos_bot.domain.models import (
     Config,
@@ -117,6 +118,51 @@ def parsear_config(filas: Sequence[Sequence[Any]]) -> Config:
 
 def fila_carpeta(ruta: str, folder_id: str) -> list[str]:
     return [schema.CONFIG_TIPO_CARPETA, ruta, folder_id, "", "", "caché de Drive"]
+
+
+def fila_tc(tc: TipoCambio, nota: str = "") -> list[Any]:
+    """Fila de Config para el TC de un mes (R7). El valor va como número, no como texto: así no
+    depende de si el Sheet interpreta la coma o el punto como decimal."""
+    return [
+        schema.CONFIG_TIPO_TC,
+        tc.mes,
+        float(tc.valor),
+        "UYU/USD",
+        tc.fecha.isoformat() if tc.fecha else "",
+        nota,
+    ]
+
+
+def _mismo_numero(crudo: str, valor: Decimal) -> bool:
+    try:
+        return _decimal(crudo) == valor
+    except ValueError:
+        return False
+
+
+def reconvertir_filas(filas: Sequence[Sequence[Any]], tc: Decimal) -> tuple[list[list[Any]], int]:
+    """Recalcula ``tc_mes`` y ``monto_usd`` de cada fila con ese TC (R7).
+
+    Devuelve el bloque de esas dos columnas (contiguas, en el orden del esquema) para todas las
+    filas recibidas y cuántas cambian. Las filas que no se entienden se devuelven tal cual: una
+    edición torpe en el Sheet no se pisa.
+    """
+    c = schema.MES_COLUMNAS.index
+    bloque: list[list[Any]] = []
+    cambios = 0
+    for fila in filas:
+        crudo_tc, crudo_usd = _campo(fila, c("tc_mes")), _campo(fila, c("monto_usd"))
+        try:
+            monto = _decimal(_campo(fila, c("monto")))
+            moneda = Moneda(_campo(fila, c("moneda")).upper())
+            usd = a_usd(monto, moneda, tc)
+        except (ValueError, KeyError, TipoCambioInvalido):
+            bloque.append([crudo_tc, crudo_usd])
+            continue
+        if not (_mismo_numero(crudo_tc, tc) and _mismo_numero(crudo_usd, usd)):
+            cambios += 1
+        bloque.append([float(tc), float(usd)])
+    return bloque, cambios
 
 
 # ---------- Gastos ----------

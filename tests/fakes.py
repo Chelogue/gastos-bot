@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from collections.abc import Sequence
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -11,8 +13,16 @@ from telegram import Chat, Message, User
 from telegram.ext import ExtBot
 
 from gastos_bot.domain.categorias import Catalogo
+from gastos_bot.domain.fx import a_usd
 from gastos_bot.domain.indicador import Indicador
-from gastos_bot.domain.models import Config, EstadoPendiente, Extraccion, Gasto, Pendiente
+from gastos_bot.domain.models import (
+    Config,
+    EstadoPendiente,
+    Extraccion,
+    Gasto,
+    Pendiente,
+    TipoCambio,
+)
 from gastos_bot.domain.quincena import mes_de
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida
 from gastos_bot.storage.base import ArchivoSubido, StorageError
@@ -77,6 +87,19 @@ class FakeBot(ExtBot):  # type: ignore[type-arg]
         return True
 
 
+_RE_CELDA = re.compile(r"^([A-Z]+)(\d+)$")
+
+
+def _celda_a1(celda: str) -> tuple[int, int]:
+    """``I2`` → (columna 8, fila 1), ambas base 0."""
+    m = _RE_CELDA.match(celda.upper())
+    assert m, f"celda A1 inválida: {celda}"
+    col = 0
+    for letra in m.group(1):
+        col = col * 26 + (ord(letra) - ord("A") + 1)
+    return col - 1, int(m.group(2)) - 1
+
+
 class FakeWorksheet:
     """Subconjunto de gspread.Worksheet que usa storage/sheet_setup.py."""
 
@@ -100,13 +123,17 @@ class FakeWorksheet:
     def get_all_values(self) -> list[list[str]]:
         return [list(r) for r in self.values]
 
-    def update(self, values: list[list[Any]], range_name: str = "A1") -> None:
-        assert range_name.startswith("A"), "el fake solo soporta rangos que empiezan en A"
-        inicio = int(range_name[1:] or 1) - 1
-        for i, fila in enumerate(values, start=inicio):
-            while len(self.values) <= i:
+    def update(self, values: list[list[Any]], range_name: str = "A1", **_kwargs: Any) -> None:
+        col0, fila0 = _celda_a1(range_name.split(":")[0])
+        for i, fila in enumerate(values):
+            n = fila0 + i
+            while len(self.values) <= n:
                 self.values.append([])
-            self.values[i] = [str(v) for v in fila]
+            destino = self.values[n]
+            while len(destino) < col0 + len(fila):
+                destino.append("")
+            for j, valor in enumerate(fila):
+                destino[col0 + j] = str(valor)
 
     def append_rows(self, rows: list[list[Any]], value_input_option: str = "RAW") -> None:
         self.values.extend([str(v) for v in r] for r in rows)
@@ -245,6 +272,7 @@ class FakeConfigRepo:
     def __init__(self, config: Config) -> None:
         self.config = config
         self.carpetas_guardadas: dict[str, str] = {}
+        self.tcs_guardados: list[tuple[TipoCambio, str]] = []
 
     async def cargar(self) -> Config:
         return self.config.model_copy(
@@ -253,6 +281,11 @@ class FakeConfigRepo:
 
     async def guardar_carpeta(self, ruta: str, folder_id: str) -> None:
         self.carpetas_guardadas[ruta] = folder_id
+
+    async def guardar_tc(self, tc: TipoCambio, nota: str = "") -> None:
+        self.tcs_guardados.append((tc, nota))
+        otros = tuple(t for t in self.config.tipos_de_cambio if t.mes != tc.mes)
+        self.config = self.config.model_copy(update={"tipos_de_cambio": (*otros, tc)})
 
 
 class FakeCategoriasRepo:
@@ -278,6 +311,18 @@ class FakeGastosRepo:
 
     async def listar_mes(self, mes: str) -> list[Gasto]:
         return list(self.filas.get(mes, []))
+
+    async def reconvertir_mes(self, mes: str, tc: Decimal) -> int:
+        cambios = 0
+        nuevos: list[Gasto] = []
+        for g in self.filas.get(mes, []):
+            usd = a_usd(g.monto, g.moneda, tc)
+            if g.tc_mes != tc or g.monto_usd != usd:
+                cambios += 1
+            nuevos.append(g.model_copy(update={"tc_mes": tc, "monto_usd": usd}))
+        if mes in self.filas:
+            self.filas[mes] = nuevos
+        return cambios
 
 
 class FakePendientesRepo:

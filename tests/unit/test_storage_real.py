@@ -20,6 +20,7 @@ from gastos_bot.domain.models import (
     Persona,
     Porcentajes,
     Quincena,
+    TipoCambio,
     TipoDoc,
     TipoDocExtraido,
 )
@@ -101,6 +102,41 @@ async def test_gastos_crea_pestana_y_lista(cliente: SheetsCliente) -> None:
     listado = await repo.listar_mes("2026-09")
     assert [g.id for g in listado] == ["G-260910-001", "G-260910-002"]
     assert listado[0].monto_usd == Decimal("31.25")
+
+
+async def test_guardar_tc_reemplaza_la_fila_del_mes(cliente: SheetsCliente) -> None:
+    repo = SheetsConfigRepo(cliente)
+    filas_antes = len(cliente.hoja_o_error("Config").get_all_values())
+    await repo.guardar_tc(
+        TipoCambio(mes="2026-09", valor=Decimal("40.5"), fecha=HOY), nota="fuente: er-api"
+    )
+    cfg = await repo.cargar()
+    tc = cfg.tc_del_mes("2026-09")
+    assert tc is not None and tc.valor == Decimal("40.5") and tc.fecha == HOY
+    # la fila de septiembre ya existía (la crea el script): se reemplaza, no se duplica
+    assert len(cliente.hoja_o_error("Config").get_all_values()) == filas_antes
+
+    await repo.guardar_tc(TipoCambio(mes="2026-10", valor=Decimal("41"), fecha=date(2026, 10, 1)))
+    assert len(cliente.hoja_o_error("Config").get_all_values()) == filas_antes + 1
+    octubre = (await repo.cargar()).tc_del_mes("2026-10")
+    assert octubre is not None and octubre.valor == Decimal("41")
+
+
+async def test_reconvertir_mes_reescribe_tc_y_usd(cliente: SheetsCliente) -> None:
+    repo = SheetsGastosRepo(cliente)
+    await repo.agregar(_gasto("G-260910-001"))
+    await repo.agregar(
+        _gasto("G-260910-002").model_copy(
+            update={"monto": Decimal("20"), "moneda": Moneda.USD, "monto_usd": Decimal("20")}
+        )
+    )
+    assert await repo.reconvertir_mes("2026-09", Decimal("50")) == 2
+    listado = await repo.listar_mes("2026-09")
+    assert [g.monto_usd for g in listado] == [Decimal("25"), Decimal("20")]
+    assert {g.tc_mes for g in listado} == {Decimal("50")}
+    assert [g.id for g in listado] == ["G-260910-001", "G-260910-002"]  # nada más se tocó
+    assert await repo.reconvertir_mes("2026-09", Decimal("50")) == 0  # idempotente
+    assert await repo.reconvertir_mes("2026-11", Decimal("50")) == 0  # mes sin pestaña
 
 
 async def test_falta_pestana_es_storage_error() -> None:

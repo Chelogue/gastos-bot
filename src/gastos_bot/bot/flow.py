@@ -18,7 +18,6 @@ from gastos_bot.bot import messages as msg
 from gastos_bot.domain import ids, naming
 from gastos_bot.domain.categorias import Rubro
 from gastos_bot.domain.fx import a_usd
-from gastos_bot.domain.indicador import calcular, ingreso_conjunto_usd
 from gastos_bot.domain.models import (
     CampoEsperado,
     EstadoPendiente,
@@ -34,6 +33,7 @@ from gastos_bot.domain.quincena import a_local, mes_de, quincena_de
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida, Extractor
 from gastos_bot.logging_setup import bind_context, get_logger
 from gastos_bot.storage.base import StorageError
+from gastos_bot.storage.dashboard import recalcular_mes
 from gastos_bot.storage.factory import Storage
 
 log = get_logger("gastos_bot.flow")
@@ -398,17 +398,7 @@ class Flujo:
 
         assert isinstance(config, Config)
         try:
-            gastos = await self.st.gastos.listar_mes(mes)
-            primer_dia = datetime.strptime(mes, "%Y-%m").date()
-            indicador = calcular(
-                mes,
-                gastos,
-                ingreso_usd=ingreso_conjunto_usd(config, primer_dia, tc),
-                tc_uyu_usd=tc,
-                porcentajes=config.porcentajes,
-                personas=[per.nombre for per in config.personas],
-            )
-            await self.st.dashboard.recalcular(indicador)
+            await recalcular_mes(self.st.gastos, self.st.dashboard, mes, config, tc)
             return True
         except StorageError as exc:
             log.warning("dashboard_fallo", motivo=str(exc))

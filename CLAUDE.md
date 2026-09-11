@@ -27,14 +27,18 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** Fase 1 desplegada en Cloud Run (proyecto `gastos-bot-508217`, us-central1) y
-probada con fotos reales el 2026-09-10: dos gastos guardados en el Sheet y en Drive. Falta el
-bake-off (R19) cuando haya 30 comprobantes. Próxima: Fase 2 (TC automático, reporte, Dashboard completo).
+**Fase en curso:** Fase 2 construida y testeada con dobles (TC automático, reporte quincenal,
+endpoints `/jobs/*` con OIDC). Falta desplegarla y crear los jobs de Cloud Scheduler
+(`infra/setup_scheduler.sh`), las dos cosas requieren OK de Marcelo. Próxima: Fase 3 (R11–R13:
+registro por texto, /total, /ultimos, editar y borrar).
 
 **Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
 en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
 account (cuota 0 en Drive). Modelo `gemini-3.6-flash`. Webhook registrado en la URL de Cloud Run.
+Cloud Scheduler llama `/jobs/fx` (día 1, 00:05) y `/jobs/reporte` (días 1 y 16, 09:00) con un
+token OIDC de `gastos-bot-sa`, que el servicio verifica contra `JOBS_OIDC_EMAIL` y `JOBS_AUDIENCE`
+(variable de repo `CLOUD_RUN_URL`).
 
-**Requerimientos cerrados:** R1, R2, R3, R4, R5, R6, R14, R15, R16, R17, R18 (validados con
-dobles y con una prueba real de punta a punta). R19: script listo, faltan los comprobantes.
-Provisional: TC de septiembre cargado a mano en Config (R7 llega en Fase 2).
+**Requerimientos cerrados:** R1–R6, R14–R18 (validados de punta a punta con fotos reales el
+2026-09-10). R7, R8, R9, R10: implementados y cubiertos por tests; se cierran cuando corran en
+producción (primer disparo de los jobs). R19: script listo, faltan los 30 comprobantes.

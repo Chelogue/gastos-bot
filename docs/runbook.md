@@ -15,16 +15,58 @@
    Sheets falló, el archivo se borra). Revisá que la service account siga siendo editora del Sheet
    y de la carpeta `Gastos/`.
 
-## Cambiar el tipo de cambio a mano
+## Tipo de cambio (R7)
 
-En `Config`, fila `tc | YYYY-MM`: editá `valor` (UYU por USD) y `vigente_desde`. Después:
+Lo fija solo el job `/jobs/fx` el día 1 a las 00:05, con la cotización de open.er-api.com
+(ADR 0007). Si la API no responde, reusa el del mes anterior y avisa por Telegram.
+
+**Cambiarlo a mano:** en `Config`, fila `tc | YYYY-MM`, editá `valor` (UYU por USD). El bot lo
+toma solo dentro de los 5 minutos del caché. Para que las filas del mes y el Dashboard queden
+con el número nuevo, cualquiera de estas dos cosas:
 
 ```bash
-uv run python scripts/recalc_dashboard.py --mes YYYY-MM
+uv run python scripts/recalc_dashboard.py --mes YYYY-MM   # reconvierte y recalcula, al toque
 ```
 
-Eso recalcula `monto_usd` en el Dashboard del mes. Las filas del mes conservan su `tc_mes`
-original; si querés reescribirlas, editá la columna en el Sheet.
+o esperar al próximo reporte quincenal, que reconvierte antes de contar.
+
+**Fijarlo ahora (sin esperar al día 1):**
+
+```bash
+gcloud scheduler jobs run gastos-bot-fx --location us-central1
+```
+
+Si el mes ya tiene TC, el job no hace nada. Para pisarlo hay que forzarlo:
+
+```bash
+curl -X POST "https://<servicio>.a.run.app/jobs/fx?forzar=true" \
+  -H "X-Telegram-Bot-Api-Secret-Token: $TELEGRAM_WEBHOOK_SECRET"
+```
+
+## Los jobs de Cloud Scheduler (R7, R9)
+
+| Job | Cuándo | Qué hace |
+|---|---|---|
+| `gastos-bot-fx` | día 1, 00:05 | fija el TC del mes, reconvierte las filas y recalcula el Dashboard |
+| `gastos-bot-reporte` | días 1 y 16, 09:00 | manda el reporte de la quincena a los dos y cierra el mes en el Dashboard |
+
+Se crean o actualizan con `infra/setup_scheduler.sh gastos-bot-508217 us-central1` (idempotente,
+dentro del free tier). Ver qué pasó:
+
+```bash
+gcloud scheduler jobs list --location us-central1
+gcloud scheduler jobs describe gastos-bot-reporte --location us-central1   # lastAttemptTime, status
+gcloud run services logs read gastos-bot --region us-central1 --limit 50
+```
+
+**No llegó el reporte.** Mirá los logs del servicio: si dice `reporte_sin_tc`, falta el TC del mes
+en `Config` (y los dos recibieron un aviso). Si el job figura con error, reintenta solo hasta tres
+veces; después se dispara a mano con `gcloud scheduler jobs run gastos-bot-reporte
+--location us-central1`.
+
+**403 en los jobs.** El servicio verifica el token OIDC contra `JOBS_OIDC_EMAIL` y `JOBS_AUDIENCE`.
+Si cambió la URL del servicio, actualizá la variable de repo `CLOUD_RUN_URL`, redesplegá y volvé a
+correr `infra/setup_scheduler.sh` (la audiencia tiene que coincidir).
 
 ## Reautorizar Google (Drive/Sheets dejan de responder con 401/invalid_grant)
 
@@ -68,3 +110,6 @@ recibe "expiró, reenviá la foto" si toca un botón viejo.
 4. Variable de repo `DEPLOY_ENABLED=true` y push a `main` → deploy. Verificar `/health`.
 5. `uv run python scripts/set_webhook.py --url https://<servicio>.a.run.app/webhook`.
 6. Mandar `/start` desde cada uno de los dos chats.
+7. Variable de repo `CLOUD_RUN_URL=https://<servicio>.a.run.app` y redeploy (es la audiencia OIDC).
+8. `infra/setup_scheduler.sh <PROJECT_ID> us-central1` y probar con
+   `gcloud scheduler jobs run gastos-bot-reporte --location us-central1`.

@@ -24,7 +24,7 @@ gastos-bot/
 │       └── deploy.yml             # build → Artifact Registry → Cloud Run, en push a main, con Workload Identity
 ├── infra/
 │   ├── setup_gcp.sh               # habilita APIs, crea SA, secretos, Artifact Registry, Scheduler jobs (idempotente)
-│   ├── scheduler.yaml             # definición de los dos jobs (fx, reporte) con OIDC
+│   ├── setup_scheduler.sh         # crea los dos jobs (fx, reporte) con OIDC, idempotente
 │   └── cloudrun.yaml              # servicio: min-instances 0, timeout 120s, env vars, secretos montados
 ├── scripts/
 │   ├── create_sheet.py            # crea el Sheet completo: Dashboard, Config, Categorias, Pendientes, plantilla de mes, gráficos

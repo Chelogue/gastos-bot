@@ -12,17 +12,20 @@ from gastos_bot.domain.models import (
     Pendiente,
     Porcentajes,
     Quincena,
+    TipoCambio,
     TipoDoc,
     TipoDocExtraido,
 )
 from gastos_bot.storage import sheet_schema as schema
 from gastos_bot.storage.serializacion import (
     fila_a_pendiente,
+    fila_tc,
     filas_a_gastos,
     gasto_a_fila,
     indicador_a_fila,
     parsear_config,
     pendiente_a_fila,
+    reconvertir_filas,
 )
 
 AHORA = datetime(2026, 9, 10, 15, 30, tzinfo=UTC)
@@ -132,3 +135,40 @@ def test_indicador_a_fila() -> None:
     assert fila[schema.DASHBOARD_COLUMNAS.index("marcelo_usd")] == 30.88
     assert fila[schema.DASHBOARD_COLUMNAS.index("nikole_usd")] == 0.0
     assert fila[-1] == Cumplimiento.OK.value
+
+
+def test_fila_tc_ida_y_vuelta() -> None:
+    tc = TipoCambio(mes="2026-10", valor=Decimal("41.75"), fecha=date(2026, 10, 1))
+    fila = fila_tc(tc, nota="fuente: er-api")
+    assert fila[:2] == ["tc", "2026-10"]
+    assert fila[2] == 41.75  # número, no texto
+    assert fila[4] == "2026-10-01" and fila[5] == "fuente: er-api"
+    cfg = parsear_config([[str(v) for v in fila]])
+    assert cfg.tc_del_mes("2026-10") == tc
+
+
+def test_reconvertir_filas_recalcula_solo_lo_que_cambia() -> None:
+    uyu = [str(v) for v in gasto_a_fila(_gasto())]  # 1250,50 UYU a TC 40,5 → 30,88
+    usd = [
+        str(v)
+        for v in gasto_a_fila(
+            _gasto().model_copy(
+                update={"monto": Decimal("100"), "moneda": Moneda.USD, "monto_usd": Decimal("100")}
+            )
+        )
+    ]
+    rota = list(uyu)
+    rota[schema.MES_COLUMNAS.index("monto")] = "mil"
+    bloque, cambios = reconvertir_filas([uyu, usd, rota, []], Decimal("45"))
+    assert cambios == 2  # la fila en USD no cambia de monto_usd, pero sí de tc_mes
+    assert bloque[0] == [45.0, 27.79]
+    assert bloque[1] == [45.0, 100.0]
+    assert bloque[2] == ["40.5", "30.88"]  # la fila rota se devuelve tal cual
+    assert bloque[3] == ["", ""]
+    assert len(bloque) == 4
+
+
+def test_reconvertir_filas_con_el_mismo_tc_no_cambia_nada() -> None:
+    fila = [str(v) for v in gasto_a_fila(_gasto())]
+    bloque, cambios = reconvertir_filas([fila], Decimal("40.5"))
+    assert cambios == 0 and bloque == [[40.5, 30.88]]
