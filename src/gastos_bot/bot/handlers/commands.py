@@ -68,3 +68,13 @@ async def editar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id=message.chat_id,
         gasto_id=gasto_id,
     )
+
+
+async def reporte(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, user = update.effective_message, update.effective_user
+    if message is None or user is None:
+        return
+    args = getattr(context, "args", None) or []
+    await flujo_de(context).reporte(
+        telegram_id=user.id, chat_id=message.chat_id, cual=" ".join(args) or None
+    )

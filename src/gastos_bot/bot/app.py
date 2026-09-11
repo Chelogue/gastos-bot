@@ -125,6 +125,7 @@ def build_application(
     application.add_handler(CommandHandler("ayuda", commands.ayuda))
     application.add_handler(CommandHandler("total", commands.total))
     application.add_handler(CommandHandler("ultimos", commands.ultimos))
+    application.add_handler(CommandHandler("reporte", commands.reporte))
     application.add_handler(CommandHandler("borrar", commands.borrar))
     application.add_handler(CommandHandler("editar", commands.editar))
     application.add_handler(

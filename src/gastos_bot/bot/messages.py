@@ -78,6 +78,9 @@ TOAST_DUPLICADO = "Fijate: parece repetido."
 EDITANDO = "✏️ Editando {id}"
 EDITADO = "✏️ Actualicé {id}\n{resumen}"
 SIN_GASTOS = "Todavía no hay gastos registrados. Mandame una foto o escribime «450 uyu farmacia»."
+SIN_TC_CONSULTA = (
+    "No puedo calcular {mes}: falta el tipo de cambio de ese mes en la pestaña Config del Sheet."
+)
 REPORTE_SIN_TC = (
     "Tenía que mandarles el reporte de {mes}, pero falta el tipo de cambio del mes en la pestaña "
     "Config. Cargalo y les mando el reporte con /reporte."
@@ -220,7 +223,7 @@ def _linea_rubro(etiqueta: str, gastado: Decimal, tope: Decimal, usado: Decimal)
 def reporte(r: Reporte) -> str:
     """Reporte quincenal (R9). Los números salen de reports/quincenal.py; acá solo se redacta."""
     nombres_q = {Quincena.Q1: "primera quincena", Quincena.Q2: "segunda quincena"}
-    nombre_q = nombres_q[r.quincena] if r.quincena is not None else "período"
+    nombre_q = nombres_q[r.quincena] if r.quincena is not None else "el mes"
     mes = mes_largo(r.mes)
     encabezado = f"Cierre de {mes}" if r.cierre_de_mes else mes.capitalize()
     dias = f"{int(r.desde[8:])} al {int(r.hasta[8:])}"

@@ -17,7 +17,7 @@ from gastos_bot.bot import keyboards as kb
 from gastos_bot.bot import messages as msg
 from gastos_bot.domain import ids, naming
 from gastos_bot.domain.categorias import Rubro
-from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos
+from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos, periodo_pedido
 from gastos_bot.domain.duplicados import buscar_duplicado
 from gastos_bot.domain.fx import a_usd
 from gastos_bot.domain.ids import mes_de_id
@@ -35,13 +35,7 @@ from gastos_bot.domain.models import (
     TipoDocExtraido,
 )
 from gastos_bot.domain.parseo import TextoInvalido, parsear_fecha, parsear_monto
-from gastos_bot.domain.quincena import (
-    a_local,
-    mes_anterior,
-    mes_de,
-    periodo_en_curso,
-    quincena_de,
-)
+from gastos_bot.domain.quincena import a_local, mes_anterior, mes_de, quincena_de
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida, Extractor
 from gastos_bot.logging_setup import bind_context, get_logger
 from gastos_bot.reports import quincenal
@@ -231,17 +225,21 @@ class Flujo:
 
     async def total(self, *, telegram_id: int, chat_id: int) -> None:
         """Cómo viene la quincena en curso: mismo cálculo que el reporte quincenal."""
+        await self.reporte(telegram_id=telegram_id, chat_id=chat_id)
+
+    async def reporte(self, *, telegram_id: int, chat_id: int, cual: str | None = None) -> None:
+        """``/reporte`` a demanda (R22): quincena en curso, la anterior o el mes entero."""
         with bind_context(telegram_id=telegram_id):
             if await self._persona(telegram_id, chat_id) is None:
                 return
             hoy = a_local(self.reloj(), self.zona).date()
-            periodo = periodo_en_curso(hoy)
+            periodo = periodo_pedido(cual, hoy)
             mes = periodo.mes.mes
             try:
                 config = await self.st.config.cargar()
                 tc = config.tc_del_mes(mes)
                 if tc is None:
-                    await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
+                    await self.tg.enviar(chat_id, msg.SIN_TC_CONSULTA.format(mes=mes))
                     return
                 gastos = await self.st.gastos.listar_mes(mes)
             except StorageError as exc:

@@ -9,6 +9,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date
+
+from gastos_bot.domain.quincena import (
+    PeriodoReporte,
+    periodo_en_curso,
+    periodo_mes,
+    periodo_reporte,
+)
 
 _RE_NUMERO = re.compile(r"\d")
 
@@ -56,3 +64,17 @@ def es_consulta_total(texto: str) -> bool:
 def es_consulta_ultimos(texto: str) -> bool:
     """«los últimos gastos»: el listado con IDs."""
     return _coincide(texto, _FRASES_ULTIMOS)
+
+
+def periodo_pedido(texto: str | None, hoy: date) -> PeriodoReporte:
+    """Traduce el argumento de ``/reporte`` (R22).
+
+    Sin argumento, la quincena en curso. «anterior» o «pasada», la última que cerró. «mes», el mes
+    entero. Cualquier otra cosa cae en la quincena en curso, que es lo que se pregunta siempre.
+    """
+    palabras = set(normalizar(texto or "").split())
+    if palabras & {"anterior", "anteriores", "pasada", "pasado", "ultima", "ultimo"}:
+        return periodo_reporte(hoy)
+    if "mes" in palabras:
+        return periodo_mes(hoy)
+    return periodo_en_curso(hoy)

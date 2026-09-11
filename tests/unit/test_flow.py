@@ -542,3 +542,27 @@ async def test_un_gasto_distinto_no_dispara_el_aviso() -> None:
     await m.toque(f"c:{pid2}:s")
     assert await m.toque(f"g:{pid2}") == msg.TOAST_OK
     assert len(m.gastos.filas["2026-09"]) == 2
+
+
+async def test_reporte_a_demanda_del_mes_y_de_la_quincena_anterior() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+
+    await m.flujo.reporte(telegram_id=MARCELO, chat_id=MARCELO, cual="mes")
+    texto = m.tg.enviados[-1]["texto"]
+    assert "Setiembre · el mes en curso (1 al 30, al 10)" in texto
+    assert "Llevan gastados U$S 31,26" in texto
+
+    # la quincena anterior cae en agosto, que no tiene tipo de cambio cargado
+    await m.flujo.reporte(telegram_id=MARCELO, chat_id=MARCELO, cual="anterior")
+    assert m.tg.enviados[-1]["texto"] == msg.SIN_TC_CONSULTA.format(mes="2026-08")
+
+
+async def test_reporte_de_la_quincena_anterior_ya_cerrada() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    m.reloj = datetime(2026, 9, 20, 15, 0, tzinfo=UTC)  # ya pasó el 16
+    await m.flujo.reporte(telegram_id=MARCELO, chat_id=MARCELO, cual="la pasada")
+    texto = m.tg.enviados[-1]["texto"]
+    assert "primera quincena (1 al 15)" in texto and "en curso" not in texto
+    assert "Gastaron U$S 31,26 en 1 movimiento." in texto
