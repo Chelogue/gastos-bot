@@ -27,11 +27,9 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** Fase 4 (P1: R20–R24) construida y testeada en la rama `feat/fase-4-pulido`:
-aviso de duplicados, `/reporte` a demanda, `/dashboard` en el chat y `/repetir` para los
-recurrentes. Falta desplegarla (OK de Marcelo) y volver a correr
-`scripts/set_webhook.py --comandos`, que ahora incluye los comandos nuevos. Las fases 0 a 3 están
-en producción.
+**Fase en curso:** ninguna: las fases 0 a 4 están desplegadas (la 4 el 2026-09-11) y el menú de
+comandos de Telegram está al día. Lo único abierto del PRD es el bake-off R19, que espera los 30
+comprobantes; después toca elegir proveedor de LLM y escribir su ADR.
 
 **Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
 en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
@@ -44,5 +42,5 @@ token OIDC de `gastos-bot-sa`, que el servicio verifica contra `JOBS_OIDC_EMAIL`
 2026-09-10). R7, R8, R10 y la autorización OIDC de los jobs: en producción y verificados.
 R9: el reporte se probó con los datos reales del Sheet contra Telegram; falta verlo salir solo
 el día 16. R11, R12, R13: desplegados; `/total` y `/ultimos` verificados en producción, `/editar`
-y `/borrar` cubiertos por tests. R19: script listo, faltan los 30 comprobantes. R20–R24 (P1): construidos y cubiertos por tests,
-sin desplegar todavía; R21 (nota desde el caption) ya venía de la Fase 1.
+y `/borrar` cubiertos por tests. R20–R24 (P1): desplegados; `/dashboard` verificado en producción. R19: único requerimiento
+abierto, el script está listo y faltan los 30 comprobantes.
