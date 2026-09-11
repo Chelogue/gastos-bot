@@ -5,7 +5,13 @@ import pytest
 
 from gastos_bot.domain.categorias import Rubro
 from gastos_bot.domain.fx import TipoCambioInvalido, a_usd, ingreso_en_usd
-from gastos_bot.domain.indicador import Cumplimiento, Indicador, calcular, ingreso_conjunto_usd
+from gastos_bot.domain.indicador import (
+    Cumplimiento,
+    Ejecucion,
+    Indicador,
+    calcular,
+    ingreso_conjunto_usd,
+)
 from gastos_bot.domain.models import (
     Config,
     Estado,
@@ -166,3 +172,33 @@ def test_sin_ahorro_registrado_el_desglose_queda_vacio() -> None:
     ind = _calcular([_gasto("100", Rubro.NECESIDADES)])
     assert ind.ahorro_por_subcategoria == ()
     assert ind.inversion_usd == Decimal("0") and ind.ahorro_registrado_usd == Decimal("0")
+
+
+def _con_ahorro(*montos: tuple[str, str], ingreso: str = "1000") -> Indicador:
+    gastos = [_gasto(m, Rubro.AHORRO, subcategoria=sub) for m, sub in montos]
+    return _calcular(gastos, ingreso=ingreso)
+
+
+def test_el_objetivo_del_20_por_ciento_se_puede_cumplir_y_superar() -> None:
+    # ingreso 1000 → objetivo 200
+    en_camino = _con_ahorro(("150", "Inversión"))
+    assert en_camino.ahorro_tope_usd == Decimal("200.00")
+    assert en_camino.ejecutado_pct == Decimal("0.75")
+    assert en_camino.ejecucion is Ejecucion.EN_CAMINO
+    assert en_camino.margen_del_objetivo_usd == Decimal("50.00")
+
+    justo = _con_ahorro(("200", "Inversión"))
+    assert justo.ejecucion is Ejecucion.CUMPLIDO and justo.ejecutado_pct == Decimal("1")
+
+    superado = _con_ahorro(("250", "Inversión"), ("50", "Ahorro"))
+    assert superado.ejecucion is Ejecucion.SUPERADO
+    assert superado.ejecutado_pct == Decimal("1.5")
+    assert superado.margen_del_objetivo_usd == Decimal("-100.00")
+    assert superado.inversion_usd == Decimal("250")  # lo que efectivamente fue al portafolio
+    assert superado.cumplimiento is Cumplimiento.OK  # pasarse de ahorro no es un problema
+
+
+def test_sin_ingreso_no_hay_objetivo_que_superar() -> None:
+    ind = _con_ahorro(("100", "Inversión"), ingreso="0")
+    assert ind.ahorro_tope_usd == Decimal("0")
+    assert ind.ejecutado_pct == Decimal("0") and ind.ejecucion is Ejecucion.EN_CAMINO

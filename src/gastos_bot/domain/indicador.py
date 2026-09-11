@@ -22,9 +22,19 @@ CERO = Decimal("0")
 
 
 class Cumplimiento(StrEnum):
+    """Gasto: pasarse es malo."""
+
     OK = "✅"  # necesidades ≤ 50 % y deseos ≤ 30 %
     ADVERTENCIA = "⚠️"  # uno se pasa
     EXCEDIDO = "❌"  # los dos
+
+
+class Ejecucion(StrEnum):
+    """Ahorro e inversión: pasarse del objetivo es bueno (ADR 0010)."""
+
+    SUPERADO = "🚀"  # se apartó más del 20 % del ingreso
+    CUMPLIDO = "🎯"  # justo el objetivo
+    EN_CAMINO = "🟡"  # todavía falta
 
 
 @dataclass(frozen=True)
@@ -64,10 +74,13 @@ class ResumenMes:
     deseos_usd: Decimal
     deseos_pct: Decimal
     ahorro_pct: Decimal
+    ahorro_objetivo_usd: Decimal
     ahorro_registrado_usd: Decimal
     inversion_usd: Decimal
+    ejecutado_pct: Decimal
     n_registros: int
     cumplimiento: str
+    ejecucion: str
 
 
 @dataclass(frozen=True)
@@ -82,7 +95,9 @@ class Indicador:
     ahorro_declarado_usd: Decimal  # todo el rubro Ahorro: guardado + invertido + deuda extra
     inversion_usd: Decimal  # la parte invertida, que se muestra aparte (ADR 0008)
     ahorro_por_subcategoria: tuple[tuple[str, Decimal], ...]  # desglose, de mayor a menor
-    ahorro_tope_usd: Decimal
+    ahorro_tope_usd: Decimal  # el objetivo del mes: 20 % del ingreso
+    ejecutado_pct: Decimal  # ahorro_declarado / objetivo; 1.0 = objetivo cumplido
+    ejecucion: Ejecucion
     por_persona_usd: dict[str, Decimal]
     compartido_usd: Decimal
     personal_usd: Decimal
@@ -94,6 +109,11 @@ class Indicador:
     def ahorro_registrado_usd(self) -> Decimal:
         """Lo apartado que no es inversión. Con ``inversion_usd`` suman el rubro completo."""
         return self.ahorro_declarado_usd - self.inversion_usd
+
+    @property
+    def margen_del_objetivo_usd(self) -> Decimal:
+        """Cuánto falta (negativo: cuánto se pasaron, que acá es una buena noticia)."""
+        return self.ahorro_tope_usd - self.ahorro_declarado_usd
 
 
 def _pct(parte: Decimal, total: Decimal) -> Decimal:
@@ -142,6 +162,16 @@ def calcular(
         else:
             personal += g.monto_usd
 
+    objetivo_ahorro = _tope(ingreso_usd, porcentajes.ahorro)
+    declarado = por_rubro[Rubro.AHORRO]
+    ejecutado_pct = _pct(declarado, objetivo_ahorro)
+    if objetivo_ahorro <= 0 or declarado < objetivo_ahorro:
+        ejecucion = Ejecucion.EN_CAMINO
+    elif declarado == objetivo_ahorro:
+        ejecucion = Ejecucion.CUMPLIDO
+    else:
+        ejecucion = Ejecucion.SUPERADO
+
     necesidades = RubroResumen(
         Rubro.NECESIDADES,
         por_rubro[Rubro.NECESIDADES],
@@ -178,7 +208,9 @@ def calcular(
         ahorro_por_subcategoria=tuple(
             sorted(ahorro_por_sub.items(), key=lambda par: (-par[1], par[0]))
         ),
-        ahorro_tope_usd=_tope(ingreso_usd, porcentajes.ahorro),
+        ahorro_tope_usd=objetivo_ahorro,
+        ejecutado_pct=ejecutado_pct,
+        ejecucion=ejecucion,
         por_persona_usd=por_persona,
         compartido_usd=compartido,
         personal_usd=personal,

@@ -283,8 +283,11 @@ def indicador_a_fila(ind: Indicador) -> list[Any]:
         "deseos_tope_usd": float(ind.deseos.tope_usd),
         "ahorro_residual_usd": float(ind.ahorro_residual_usd),
         "ahorro_pct": float(ind.ahorro_pct),
+        "ahorro_objetivo_usd": float(ind.ahorro_tope_usd),
         "ahorro_registrado_usd": float(ind.ahorro_registrado_usd),
         "inversion_usd": float(ind.inversion_usd),
+        "ejecutado_pct": float(ind.ejecutado_pct),
+        "ejecucion": ind.ejecucion.value,
         "marcelo_usd": float(ind.por_persona_usd.get("Marcelo", 0)),
         "nikole_usd": float(ind.por_persona_usd.get("Nikole", 0)),
         "compartido_usd": float(ind.compartido_usd),
@@ -314,10 +317,13 @@ def filas_a_resumenes(filas: Sequence[Sequence[Any]]) -> list[ResumenMes]:
                     deseos_usd=_decimal(_campo(fila, c("deseos_usd"))),
                     deseos_pct=_porcentaje(_campo(fila, c("deseos_pct"))),
                     ahorro_pct=_porcentaje(_campo(fila, c("ahorro_pct"))),
+                    ahorro_objetivo_usd=_decimal(_campo(fila, c("ahorro_objetivo_usd"))),
                     ahorro_registrado_usd=_decimal(_campo(fila, c("ahorro_registrado_usd"))),
                     inversion_usd=_decimal(_campo(fila, c("inversion_usd"))),
+                    ejecutado_pct=_porcentaje(_campo(fila, c("ejecutado_pct"))),
                     n_registros=int(_decimal(_campo(fila, c("n_registros")))),
                     cumplimiento=_campo(fila, c("cumplimiento")),
+                    ejecucion=_campo(fila, c("ejecucion")),
                 )
             )
         except (ValueError, IndexError):

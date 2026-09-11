@@ -39,8 +39,11 @@ ETIQUETAS_DASHBOARD: dict[str, str] = {
     "deseos_tope_usd": "Tope deseos",
     "ahorro_residual_usd": "Ahorro residual (USD)",
     "ahorro_pct": "Tasa de ahorro",
+    "ahorro_objetivo_usd": "Objetivo 20 % (USD)",
     "ahorro_registrado_usd": "Ahorro registrado (USD)",
-    "inversion_usd": "Inversión (USD)",
+    "inversion_usd": "Inversión ejecutada (USD)",
+    "ejecutado_pct": "Ejecutado vs objetivo",
+    "ejecucion": "Ejecución",
     "marcelo_usd": "Marcelo (USD)",
     "nikole_usd": "Nikole (USD)",
     "compartido_usd": "Compartido (USD)",
@@ -106,7 +109,7 @@ def etiquetas(titulo: str, columnas: tuple[str, ...]) -> tuple[str, ...]:
 
 # ---------- anchos (px) ----------
 
-ANCHOS_DASHBOARD = {"mes": 80, "cumplimiento": 110}
+ANCHOS_DASHBOARD = {"mes": 80, "cumplimiento": 110, "ejecucion": 100}
 ANCHO_DASHBOARD_DEFECTO = 118
 ANCHOS_MES = {
     "id": 110,
