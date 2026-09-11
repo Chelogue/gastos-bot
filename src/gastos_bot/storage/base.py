@@ -47,6 +47,14 @@ class GastosRepo(Protocol):
 
     async def listar_mes(self, mes: str) -> list[Gasto]: ...
 
+    async def obtener(self, gasto_id: str) -> Gasto | None:
+        """Busca por ID en la pestaña que le corresponde por fecha de envío (R12, R13)."""
+        ...
+
+    async def actualizar(self, gasto: Gasto) -> bool:
+        """Reescribe la fila de ese ID. False si no está. Editar y borrar pasan por acá (R13)."""
+        ...
+
     async def reconvertir_mes(self, mes: str, tc: Decimal) -> int:
         """Reescribe ``tc_mes`` y ``monto_usd`` de la pestaña del mes con ese TC (R7).
 

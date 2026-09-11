@@ -13,11 +13,13 @@ from decimal import Decimal
 from typing import Any
 
 from gastos_bot.domain.categorias import Catalogo
+from gastos_bot.domain.ids import mes_de_id
 from gastos_bot.domain.models import Config, Gasto, TipoCambio
 from gastos_bot.logging_setup import get_logger
 from gastos_bot.storage import sheet_schema as schema
 from gastos_bot.storage.base import StorageError
 from gastos_bot.storage.serializacion import (
+    fila_a_gasto,
     fila_carpeta,
     fila_tc,
     filas_a_gastos,
@@ -185,6 +187,48 @@ class SheetsGastosRepo:
             return filas_a_gastos(ws.get_all_values()[1:]) if ws is not None else []
 
         return await en_hilo(leer)
+
+    def _buscar(self, gasto_id: str) -> tuple[Any, int, list[str]] | None:
+        """(worksheet, número de fila 1-based, fila) del ID, o None. Bloqueante."""
+        mes = mes_de_id(gasto_id)
+        if mes is None:
+            return None
+        ws = self._c.hoja(mes)
+        if ws is None:
+            return None
+        objetivo = gasto_id.strip().upper()
+        for n, fila in enumerate(ws.get_all_values()[1:], start=2):
+            if _celda(fila, 0).upper() == objetivo:
+                return ws, n, list(fila)
+        return None
+
+    async def obtener(self, gasto_id: str) -> Gasto | None:
+        def leer() -> Gasto | None:
+            encontrado = self._buscar(gasto_id)
+            if encontrado is None:
+                return None
+            try:
+                return fila_a_gasto(encontrado[2])
+            except (ValueError, IndexError):
+                log.warning("fila_ilegible", gasto_id=gasto_id)
+                return None
+
+        return await en_hilo(leer)
+
+    async def actualizar(self, gasto: Gasto) -> bool:
+        def escribir() -> bool:
+            encontrado = self._buscar(gasto.id)
+            if encontrado is None:
+                return False
+            ws, n, _ = encontrado
+            ws.update(
+                values=[gasto_a_fila(gasto)],
+                range_name=f"A{n}",
+                value_input_option="USER_ENTERED",
+            )
+            return True
+
+        return await en_hilo(escribir)
 
     async def reconvertir_mes(self, mes: str, tc: Decimal) -> int:
         """Reescribe solo las columnas tc_mes y monto_usd (contiguas) en una sola llamada."""

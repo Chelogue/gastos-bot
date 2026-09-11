@@ -7,9 +7,10 @@ avisos y en el reporte.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
 
-from gastos_bot.domain.models import Moneda, Pendiente, Quincena, TipoDocExtraido
+from gastos_bot.domain.models import Gasto, Moneda, Pendiente, Quincena, TipoDocExtraido
 from gastos_bot.reports.quincenal import Reporte
 
 START = (
@@ -23,7 +24,13 @@ AYUDA = (
     "• Facturas largas: mandalas «como archivo» para que no pierdan calidad.\n"
     "• Un comprobante por gasto: la factura de compra o la captura de la cuota, no las dos.\n"
     "• Reembolsos y devoluciones se registran en negativo.\n"
-    "• Si el comprobante está en otra moneda, te voy a pedir el monto en dólares."
+    "• Si el comprobante está en otra moneda, te voy a pedir el monto en dólares.\n"
+    "• También podés escribirlo sin foto: «450 uyu farmacia».\n\n"
+    "Comandos:\n"
+    "/total — cómo viene la quincena (o preguntame «cuánto llevamos»)\n"
+    "/ultimos — los últimos 10 gastos con su ID\n"
+    "/editar ID — corregir un gasto ya guardado\n"
+    "/borrar ID — darlo de baja (la fila y la foto quedan)"
 )
 NO_COMPROBANTE = "Eso no parece un comprobante de gasto. Si lo es, probá con una foto más nítida."
 ERROR_EXTRACCION = "No pude leer el comprobante ahora ({motivo}). Reenviá la foto en un rato."
@@ -53,6 +60,19 @@ FX_SIN_DATO = (
     "No pude fijar el tipo de cambio de {mes} ({motivo}) y no tengo uno anterior para reusar.\n"
     "Cargalo a mano en la pestaña Config (fila tipo «tc»): sin eso no puedo guardar gastos."
 )
+USO_BORRAR = "Usá /borrar <ID>, por ejemplo /borrar G-260910-001. Los IDs salen de /ultimos."
+USO_EDITAR = "Usá /editar <ID>, por ejemplo /editar G-260910-001. Los IDs salen de /ultimos."
+GASTO_NO_ENCONTRADO = "No encontré el gasto {id}. Mirá el ID con /ultimos."
+GASTO_YA_BORRADO = "{id} ya estaba borrado."
+BORRAR_CONFIRMAR = (
+    "¿Borro este gasto?\n\n{resumen}\n\n"
+    "No se borra la foto ni la fila: queda marcada como eliminada y deja de contar."
+)
+BORRADO = "🗑️ Borré {id}. Queda en el Sheet como eliminado y ya no cuenta en el Dashboard."
+BORRAR_CANCELADO = "Listo, no toqué nada."
+EDITANDO = "✏️ Editando {id}"
+EDITADO = "✏️ Actualicé {id}\n{resumen}"
+SIN_GASTOS = "Todavía no hay gastos registrados. Mandame una foto o escribime «450 uyu farmacia»."
 REPORTE_SIN_TC = (
     "Tenía que mandarles el reporte de {mes}, pero falta el tipo de cambio del mes en la pestaña "
     "Config. Cargalo y les mando el reporte con /reporte."
@@ -66,7 +86,10 @@ SIN_CONFIG = (
     "Tu ID de Telegram no está en la pestaña Config del Sheet. Agregalo (tipo persona) y volvé a "
     "intentar."
 )
-SOLO_FOTOS = "Por ahora registro gastos a partir de fotos. Mandame el comprobante y seguimos."
+NO_ENTENDI_TEXTO = (
+    "No entendí eso como un gasto. Escribilo con monto y moneda, por ejemplo «450 uyu farmacia», "
+    "o mandame la foto del comprobante."
+)
 TOAST_FALTA = "Antes elegí {que}."
 TOAST_OK = "Listo."
 ELEGIR_CATEGORIA = "Elegí la categoría:"
@@ -118,8 +141,14 @@ def resumen(p: Pendiente, rubro: str | None) -> str:
     rojo = "🔴 " if e.tipo_doc is TipoDocExtraido.REEMBOLSO else ""
     monto_editado = " ✏️" if ed.monto is not None or ed.moneda is not None else ""
     fecha = p.fecha.isoformat() if p.fecha else "fecha de hoy"
+    # Editando un gasto ya guardado (R13) el tipo de documento no aporta: manda el ID.
+    titulo = (
+        EDITANDO.format(id=p.gasto_id)
+        if p.gasto_id
+        else f"{rojo}{_TIPO_DOC[e.tipo_doc].capitalize()}"
+    )
     lineas = [
-        f"{rojo}{_TIPO_DOC[e.tipo_doc].capitalize()} · {quien[p.compartido]}",
+        f"{titulo} · {quien[p.compartido]}",
         f"💰 {monto_fmt(p.monto, p.moneda)}{monto_editado}",
         f"🏪 {e.comercio or 'comercio: ?'}",
         f"📅 {fecha}{' ✏️' if ed.fecha else ''}",
@@ -189,13 +218,17 @@ def reporte(r: Reporte) -> str:
     nombre_q = nombres_q[r.quincena] if r.quincena is not None else "período"
     mes = mes_largo(r.mes)
     encabezado = f"Cierre de {mes}" if r.cierre_de_mes else mes.capitalize()
+    dias = f"{int(r.desde[8:])} al {int(r.hasta[8:])}"
+    if r.en_curso and r.hoy:
+        dias += f", al {int(r.hoy[8:])}"
     lineas = [
-        f"📊 {encabezado} · {nombre_q} ({int(r.desde[8:])} al {int(r.hasta[8:])})",
+        f"📊 {encabezado} · {nombre_q}{' en curso' if r.en_curso else ''} ({dias})",
         "",
     ]
     if r.hubo_gastos:
         movimientos = "movimiento" if r.n_gastos == 1 else "movimientos"
-        lineas.append(f"Gastaron {usd(r.total_usd)} en {r.n_gastos} {movimientos}.")
+        verbo = "Llevan gastados" if r.en_curso else "Gastaron"
+        lineas.append(f"{verbo} {usd(r.total_usd)} en {r.n_gastos} {movimientos}.")
         lineas += [f"• {nombre}: {usd(monto)}" for nombre, monto in r.por_persona]
         monedas = []
         if r.uyu:
@@ -211,7 +244,11 @@ def reporte(r: Reporte) -> str:
         if resto:
             lineas.append(f"• Otros ({len(resto)}): {usd(sum(m for _, m in resto))}")
     else:
-        lineas.append("No registraron gastos en esta quincena.")
+        lineas.append(
+            "Todavía no registraron gastos en esta quincena."
+            if r.en_curso
+            else "No registraron gastos en esta quincena."
+        )
 
     if r.hubo_ahorro:  # apartar plata se cuenta aparte de gastarla (ADR 0008)
         lineas += ["", f"Ahorro e inversión de la quincena: {usd(r.ahorro_usd)}"]
@@ -240,3 +277,22 @@ def reporte(r: Reporte) -> str:
     if r.link_carpeta:
         lineas.append(f"📁 Los comprobantes de {mes_largo(r.mes)}: {r.link_carpeta}")
     return "\n".join(lineas)
+
+
+def ultimos(gastos: Sequence[Gasto]) -> str:
+    """Listado con ID para poder corregir o borrar (R12)."""
+    if not gastos:
+        return SIN_GASTOS
+    lineas = [f"Últimos {len(gastos)} gastos:"]
+    lineas += [f"• {gasto_linea(g)}" for g in gastos]
+    lineas.append("")
+    lineas.append("Para corregir: /editar <ID>. Para borrar: /borrar <ID>.")
+    return "\n".join(lineas)
+
+
+def gasto_linea(g: Gasto) -> str:
+    """Una línea con lo esencial de un gasto guardado, para confirmar o listar."""
+    return (
+        f"{g.id} · {g.fecha_gasto:%d/%m} · {g.comercio or 'sin comercio'} · "
+        f"{monto_fmt(g.monto, g.moneda)} · {g.subcategoria} ({g.quien_subio})"
+    )

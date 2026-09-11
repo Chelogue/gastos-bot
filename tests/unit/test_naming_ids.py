@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from gastos_bot.domain.ids import generar_id, secuencia_de
+from gastos_bot.domain.ids import generar_id, mes_de_id, secuencia_de
 from gastos_bot.domain.models import Moneda
 from gastos_bot.domain.naming import (
     extension_de,
@@ -93,3 +93,11 @@ def test_ids() -> None:
     assert generar_id(date(2026, 9, 9), ["G-260909-999"]) == "G-260909-1000"
     assert secuencia_de("G-260909-012") == ("260909", 12)
     assert secuencia_de("G-2609-1") is None
+
+
+def test_mes_de_id() -> None:
+    assert mes_de_id("G-260910-001") == "2026-09"
+    assert mes_de_id(" g-261231-012 ") == "2026-12"
+    assert mes_de_id("G-261310-001") is None  # mes 13
+    assert mes_de_id("cualquier cosa") is None
+    assert mes_de_id("") is None

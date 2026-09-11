@@ -329,6 +329,21 @@ class FakeGastosRepo:
     async def listar_mes(self, mes: str) -> list[Gasto]:
         return list(self.filas.get(mes, []))
 
+    async def obtener(self, gasto_id: str) -> Gasto | None:
+        for gastos in self.filas.values():
+            for g in gastos:
+                if g.id == gasto_id.strip().upper():
+                    return g
+        return None
+
+    async def actualizar(self, gasto: Gasto) -> bool:
+        for mes, gastos in self.filas.items():
+            for i, g in enumerate(gastos):
+                if g.id == gasto.id:
+                    self.filas[mes][i] = gasto
+                    return True
+        return False
+
     async def reconvertir_mes(self, mes: str, tc: Decimal) -> int:
         cambios = 0
         nuevos: list[Gasto] = []

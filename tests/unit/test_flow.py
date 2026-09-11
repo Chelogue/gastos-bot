@@ -7,8 +7,10 @@ import pytest
 
 from gastos_bot.bot import messages as msg
 from gastos_bot.bot.flow import Flujo
+from gastos_bot.domain.categorias import Catalogo, Rubro
 from gastos_bot.domain.models import (
     Config,
+    Estado,
     EstadoPendiente,
     Extraccion,
     Ingreso,
@@ -16,6 +18,7 @@ from gastos_bot.domain.models import (
     MonedaExtraida,
     Persona,
     TipoCambio,
+    TipoDoc,
     TipoDocExtraido,
 )
 from gastos_bot.extraction.base import ExtraccionFallida
@@ -201,10 +204,35 @@ async def test_editar_monto_por_respuesta_y_fecha() -> None:
     assert m.drive.archivos["drive1"][1] == "2026-09-10_Disco_1300-UYU_Marcelo.jpg"
 
 
-async def test_texto_sin_pendiente_esperando() -> None:
+async def test_texto_registra_un_gasto_sin_foto() -> None:
+    m = Mundo(_extraccion(monto=Decimal("450"), comercio="Farmacia", subcategoria="Salud"))
+    await m.texto("450 uyu farmacia")
+    pid = m.pendiente_id()
+    assert pid and "¿Es un gasto compartido o personal?" in m.tg.ultimo_texto
+    ((entrada, _cats),) = m.extractor.llamadas
+    assert entrada.texto == "450 uyu farmacia" and entrada.imagen is None
+
+    await m.toque(f"c:{pid}:p")
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.tipo_doc is TipoDoc.TEXTO and gasto.link_imagen is None
+    assert gasto.monto == Decimal("450") and gasto.subcategoria == "Salud"
+    assert m.drive.archivos == {}  # nada que subir
+
+
+async def test_texto_que_no_es_un_gasto() -> None:
+    m = Mundo(_extraccion(tipo_doc=TipoDocExtraido.OTRO, monto=None, comercio=None))
+    await m.texto("hola, todo bien?")
+    assert m.tg.ultimo_texto == msg.NO_ENTENDI_TEXTO
+    assert m.pendiente_id() == ""  # no queda tarjeta abierta
+
+
+async def test_texto_duplicado_no_se_procesa_dos_veces() -> None:
     m = Mundo()
     await m.texto("450 uyu farmacia")
-    assert m.tg.ultimo_texto == msg.SOLO_FOTOS
+    enviados = len(m.tg.enviados)
+    await m.texto("450 uyu farmacia")  # mismo update_id
+    assert len(m.tg.enviados) == enviados
 
 
 async def test_cambiar_categoria() -> None:
@@ -317,3 +345,150 @@ async def test_caption_va_a_la_nota(caption: str | None) -> None:
     (gasto,) = m.gastos.filas["2026-09"]
     assert gasto.nota == ("cuota 3/12 · Regalo de cumple" if caption else "cuota 3/12")
     assert not gasto.compartido
+
+
+async def _guardar_un_gasto(m: Mundo, update_id: int = 1) -> str:
+    pid = await m.foto(update_id)
+    await m.toque(f"c:{pid}:s")
+    await m.toque(f"g:{pid}")
+    return pid
+
+
+async def test_total_de_la_quincena_en_curso() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.total(telegram_id=MARCELO, chat_id=MARCELO)
+    texto = m.tg.enviados[-1]["texto"]
+    assert "primera quincena en curso (1 al 15, al 10)" in texto
+    assert "Llevan gastados U$S 31,26 en 1 movimiento." in texto
+    assert "• Supermercado: U$S 31,26" in texto
+    assert "El mes hasta acá" in texto
+
+
+async def test_cuanto_llevamos_es_lo_mismo_que_total() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.texto("¿cuánto llevamos?")
+    assert "Llevan gastados U$S 31,26" in m.tg.enviados[-1]["texto"]
+    assert m.extractor.llamadas == [m.extractor.llamadas[0]]  # no se llamó al LLM por la pregunta
+
+
+async def test_total_sin_tipo_de_cambio_avisa() -> None:
+    m = Mundo(con_tc=False)
+    await m.flujo.total(telegram_id=MARCELO, chat_id=MARCELO)
+    assert "tipo de cambio" in m.tg.enviados[-1]["texto"]
+
+
+async def test_ultimos_lista_con_id_y_como_corregir() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.ultimos(telegram_id=MARCELO, chat_id=MARCELO)
+    texto = m.tg.enviados[-1]["texto"]
+    assert "Últimos 1 gastos:" in texto
+    assert "G-260910-001 · 03/09 · Disco · $ 1.250,50 · Supermercado (Marcelo)" in texto
+    assert "/editar" in texto and "/borrar" in texto
+
+
+async def test_ultimos_sin_nada_registrado() -> None:
+    m = Mundo()
+    await m.flujo.ultimos(telegram_id=MARCELO, chat_id=MARCELO)
+    assert m.tg.enviados[-1]["texto"] == msg.SIN_GASTOS
+
+
+async def test_borrar_pide_confirmacion_y_marca_eliminado() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    recalculos = len(m.dashboard.recalculos)
+
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="g-260910-001")
+    assert "¿Borro este gasto?" in m.tg.enviados[-1]["texto"]
+    teclado = m.tg.enviados[-1]["teclado"]
+    assert [b.data for fila in teclado for b in fila] == ["bs:G-260910-001", "bn:G-260910-001"]
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.estado is Estado.ACTIVO  # todavía no
+
+    assert await m.toque("bs:G-260910-001") == msg.TOAST_OK
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.estado is Estado.ELIMINADO and gasto.fecha_modificacion is not None
+    assert "Borré G-260910-001" in m.tg.editados[-1]["texto"]
+    assert len(m.dashboard.recalculos) == recalculos + 1
+    assert m.dashboard.recalculos[-1].n_registros == 0  # ya no cuenta
+
+
+async def test_borrar_cancelado_no_toca_nada() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    assert await m.toque("bn:G-260910-001") == msg.BORRAR_CANCELADO
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.estado is Estado.ACTIVO
+
+
+async def test_borrar_un_id_que_no_existe() -> None:
+    m = Mundo()
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-009")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_NO_ENCONTRADO.format(id="G-260910-009")
+
+
+async def test_borrar_dos_veces_avisa() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    await m.toque("bs:G-260910-001")
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_YA_BORRADO.format(id="G-260910-001")
+
+
+async def test_editar_cambia_la_fila_y_recalcula() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    recalculos = len(m.dashboard.recalculos)
+    archivos = dict(m.drive.archivos)
+
+    await m.flujo.editar(update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="g-260910-001")
+    texto = m.tg.enviados[-1]["texto"]
+    assert "✏️ Editando G-260910-001 · 👥 Compartido" in texto
+    assert "$ 1.250,50" in texto and "Supermercado" in texto
+    pid = m.pendiente_id()
+    assert m.tg.enviados[-1]["teclado"][0][0].data == f"g:{pid}"  # se puede guardar ya
+
+    await m.toque(f"k:{pid}")  # cambiar de categoría
+    catalogo = Catalogo.inicial()
+    indice = catalogo.nombres_activos().index("Ocio")
+    await m.toque(f"kc:{pid}:{indice}")
+    await m.toque(f"c:{pid}:p")  # y pasarlo a personal
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.id == "G-260910-001" and gasto.subcategoria == "Ocio"
+    assert gasto.rubro is Rubro.DESEOS and not gasto.compartido
+    assert gasto.editado and gasto.fecha_modificacion is not None
+    assert gasto.monto == Decimal("1250.50") and gasto.link_imagen is not None
+    assert gasto.fecha_envio == m.gastos.filas["2026-09"][0].fecha_envio  # no se movió de mes
+    assert "Actualicé G-260910-001" in m.tg.editados[-1]["texto"]
+    assert len(m.dashboard.recalculos) == recalculos + 1
+    assert m.drive.archivos == archivos  # editar no toca Drive
+
+
+async def test_editar_el_monto_reconvierte_a_usd() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.editar(update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    pid = m.pendiente_id()
+    await m.toque(f"m:{pid}")
+    await m.texto("800")
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.monto == Decimal("800") and gasto.monto_usd == Decimal("20")
+
+
+async def test_editar_un_gasto_borrado_o_inexistente() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.editar(update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-999999-001")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_NO_ENCONTRADO.format(id="G-999999-001")
+
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    await m.toque("bs:G-260910-001")
+    await m.flujo.editar(update_id=8, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_YA_BORRADO.format(id="G-260910-001")

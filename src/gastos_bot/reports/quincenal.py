@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from gastos_bot.domain.categorias import Rubro
@@ -33,6 +34,8 @@ class Reporte:
     desde: str  # ISO, para el encabezado
     hasta: str
     cierre_de_mes: bool
+    en_curso: bool  # /total: la quincena sigue abierta
+    hoy: str | None  # ISO, solo cuando está en curso
     n_gastos: int
     total_usd: Decimal
     por_persona: tuple[tuple[str, Decimal], ...]
@@ -69,6 +72,7 @@ def armar(
     gastos_del_mes: Sequence[Gasto],
     config: Config,
     tc: Decimal,
+    hoy: date | None = None,
     sheet_id: str | None = None,
     folder_id: str | None = None,
 ) -> Reporte:
@@ -110,6 +114,8 @@ def armar(
         desde=periodo.quincena.desde.isoformat(),
         hasta=periodo.quincena.hasta.isoformat(),
         cierre_de_mes=periodo.cierre_de_mes,
+        en_curso=periodo.en_curso,
+        hoy=hoy.isoformat() if hoy and periodo.en_curso else None,
         n_gastos=len(de_la_quincena) - n_ahorro,
         total_usd=total,
         por_persona=tuple(por_persona.items()),

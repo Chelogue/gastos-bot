@@ -90,6 +90,7 @@ class PeriodoReporte:
     quincena: Rango  # gastos de la quincena que acaba de cerrar
     mes: Rango  # el mes al que pertenece, para comparar contra topes mensuales
     cierre_de_mes: bool  # True el día 1: la quincena cerrada es Q2 y el mes quedó completo
+    en_curso: bool = False  # True en /total: la quincena todavía no terminó (R12)
 
 
 def periodo_reporte(dia_del_job: date) -> PeriodoReporte:
@@ -101,3 +102,10 @@ def periodo_reporte(dia_del_job: date) -> PeriodoReporte:
     anterior = mes_anterior(dia_del_job)
     q = rango_quincena(date(anterior.year, anterior.month, DIA_CORTE))
     return PeriodoReporte(quincena=q, mes=rango_mes(q.desde), cierre_de_mes=True)
+
+
+def periodo_en_curso(hoy: date) -> PeriodoReporte:
+    """La quincena que está corriendo hoy, para ``/total`` (R12). El mes también va a medias."""
+    return PeriodoReporte(
+        quincena=rango_quincena(hoy), mes=rango_mes(hoy), cierre_de_mes=False, en_curso=True
+    )
