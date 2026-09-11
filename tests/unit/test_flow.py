@@ -16,6 +16,7 @@ from gastos_bot.domain.models import (
     MonedaExtraida,
     Persona,
     TipoCambio,
+    TipoDoc,
     TipoDocExtraido,
 )
 from gastos_bot.extraction.base import ExtraccionFallida
@@ -201,10 +202,35 @@ async def test_editar_monto_por_respuesta_y_fecha() -> None:
     assert m.drive.archivos["drive1"][1] == "2026-09-10_Disco_1300-UYU_Marcelo.jpg"
 
 
-async def test_texto_sin_pendiente_esperando() -> None:
+async def test_texto_registra_un_gasto_sin_foto() -> None:
+    m = Mundo(_extraccion(monto=Decimal("450"), comercio="Farmacia", subcategoria="Salud"))
+    await m.texto("450 uyu farmacia")
+    pid = m.pendiente_id()
+    assert pid and "¿Es un gasto compartido o personal?" in m.tg.ultimo_texto
+    ((entrada, _cats),) = m.extractor.llamadas
+    assert entrada.texto == "450 uyu farmacia" and entrada.imagen is None
+
+    await m.toque(f"c:{pid}:p")
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.tipo_doc is TipoDoc.TEXTO and gasto.link_imagen is None
+    assert gasto.monto == Decimal("450") and gasto.subcategoria == "Salud"
+    assert m.drive.archivos == {}  # nada que subir
+
+
+async def test_texto_que_no_es_un_gasto() -> None:
+    m = Mundo(_extraccion(tipo_doc=TipoDocExtraido.OTRO, monto=None, comercio=None))
+    await m.texto("hola, todo bien?")
+    assert m.tg.ultimo_texto == msg.NO_ENTENDI_TEXTO
+    assert m.pendiente_id() == ""  # no queda tarjeta abierta
+
+
+async def test_texto_duplicado_no_se_procesa_dos_veces() -> None:
     m = Mundo()
     await m.texto("450 uyu farmacia")
-    assert m.tg.ultimo_texto == msg.SOLO_FOTOS
+    enviados = len(m.tg.enviados)
+    await m.texto("450 uyu farmacia")  # mismo update_id
+    assert len(m.tg.enviados) == enviados
 
 
 async def test_cambiar_categoria() -> None:

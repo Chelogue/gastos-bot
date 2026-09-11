@@ -71,9 +71,10 @@ def test_grupo_recibe_silencio_aunque_sea_marcelo(client: TestClient, fake_bot: 
     assert fake_bot.sent == []
 
 
-def test_texto_suelto_responde_solo_fotos(client: TestClient, fake_bot: FakeBot) -> None:
+def test_texto_suelto_llega_al_flujo(client: TestClient, fake_bot: FakeBot) -> None:
+    """Desde R11 el texto suelto se intenta registrar como gasto; acá el extractor falla y avisa."""
     assert _post(client, _update(4, MARCELO_ID, "hola")) == 200
-    assert len(fake_bot.sent) == 1 and "fotos" in fake_bot.sent[0]["text"]
+    assert len(fake_bot.sent) == 1 and "No pude leer" in fake_bot.sent[0]["text"]
 
 
 def test_update_malformado_responde_200_sin_romper(client: TestClient, fake_bot: FakeBot) -> None:

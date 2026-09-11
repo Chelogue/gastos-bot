@@ -123,19 +123,7 @@ class Flujo:
                 creado=ahora,
                 expira=ahora + self.ttl,
             )
-            if not extraccion.es_comprobante:
-                await self.st.pendientes.guardar(
-                    pendiente.model_copy(update={"estado": EstadoPendiente.RECHAZADO})
-                )
-                await self.tg.enviar(chat_id, msg.NO_COMPROBANTE)
-                return
-            message_id = await self.tg.enviar(
-                chat_id, msg.paso_1(pendiente), kb.paso_compartido(pendiente.pendiente_id)
-            )
-            await self.st.pendientes.guardar(
-                pendiente.model_copy(update={"mensaje_tarjeta_id": message_id})
-            )
-            log.info("pendiente_creado", pendiente_id=pendiente.pendiente_id)
+            await self._abrir_tarjeta(pendiente, chat_id, msg.NO_COMPROBANTE)
 
     async def procesar_texto(
         self, *, update_id: int, telegram_id: int, chat_id: int, texto: str
@@ -145,11 +133,58 @@ class Flujo:
             if persona is None:
                 return
             p = await self.st.pendientes.esperando_respuesta(telegram_id)
-            if p is None or p.vencido(self.reloj()):
-                await self.tg.enviar(chat_id, msg.SOLO_FOTOS)  # registro por texto: Fase 3 (R11)
+            if p is not None and not p.vencido(self.reloj()):
+                with bind_context(pendiente_id=p.pendiente_id):
+                    await self._aplicar_respuesta(p, chat_id, texto)
                 return
-            with bind_context(pendiente_id=p.pendiente_id):
-                await self._aplicar_respuesta(p, chat_id, texto)
+            await self._registrar_texto(
+                update_id=update_id, telegram_id=telegram_id, chat_id=chat_id, texto=texto
+            )
+
+    async def _registrar_texto(
+        self, *, update_id: int, telegram_id: int, chat_id: int, texto: str
+    ) -> None:
+        """Un gasto escrito a mano: «450 uyu farmacia» (R11). Misma tarjeta, sin imagen."""
+        if await self.st.pendientes.update_visto(update_id):
+            log.info("update_duplicado")
+            return
+        ahora = self.reloj()
+        try:
+            catalogo = await self.st.categorias.catalogo()
+            extraccion = await self.extractor.extraer(
+                Entrada(texto=texto), catalogo.nombres_activos()
+            )
+        except ExtraccionFallida as exc:
+            log.warning("extraccion_fallida", motivo=str(exc))
+            await self.tg.enviar(chat_id, msg.ERROR_EXTRACCION.format(motivo=exc))
+            return
+        pendiente = Pendiente(
+            pendiente_id=f"p-{secrets.token_hex(4)}",
+            update_id=update_id,
+            telegram_id=telegram_id,
+            extraccion=extraccion,
+            origen=TipoDoc.TEXTO,
+            nota_caption=None,
+            creado=ahora,
+            expira=ahora + self.ttl,
+        )
+        await self._abrir_tarjeta(pendiente, chat_id, msg.NO_ENTENDI_TEXTO)
+
+    async def _abrir_tarjeta(self, pendiente: Pendiente, chat_id: int, rechazo: str) -> None:
+        """Paso 1 de la tarjeta, o el mensaje de rechazo si no es un gasto."""
+        if not pendiente.extraccion.es_comprobante:
+            await self.st.pendientes.guardar(
+                pendiente.model_copy(update={"estado": EstadoPendiente.RECHAZADO})
+            )
+            await self.tg.enviar(chat_id, rechazo)
+            return
+        message_id = await self.tg.enviar(
+            chat_id, msg.paso_1(pendiente), kb.paso_compartido(pendiente.pendiente_id)
+        )
+        await self.st.pendientes.guardar(
+            pendiente.model_copy(update={"mensaje_tarjeta_id": message_id})
+        )
+        log.info("pendiente_creado", pendiente_id=pendiente.pendiente_id, origen=pendiente.origen)
 
     async def procesar_callback(
         self, *, telegram_id: int, chat_id: int, message_id: int, data: str

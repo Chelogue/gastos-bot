@@ -153,5 +153,5 @@ def test_ayuda_y_texto_suelto(client: TestClient, fake_bot: FakeBot) -> None:
     comando = {**_base(1, MARCELO_ID), "text": "/ayuda", "entities": entidades}
     _post(client, {"update_id": 1, "message": comando})
     assert fake_bot.sent[-1]["text"] == msg.AYUDA
-    _post(client, texto(2, "450 uyu farmacia"))
-    assert fake_bot.sent[-1]["text"] == msg.SOLO_FOTOS
+    _post(client, texto(2, "450 uyu farmacia"))  # R11: texto suelto = gasto escrito a mano
+    assert "¿Es un gasto compartido o personal?" in fake_bot.sent[-1]["text"]

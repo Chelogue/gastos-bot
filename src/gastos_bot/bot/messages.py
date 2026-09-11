@@ -66,7 +66,10 @@ SIN_CONFIG = (
     "Tu ID de Telegram no está en la pestaña Config del Sheet. Agregalo (tipo persona) y volvé a "
     "intentar."
 )
-SOLO_FOTOS = "Por ahora registro gastos a partir de fotos. Mandame el comprobante y seguimos."
+NO_ENTENDI_TEXTO = (
+    "No entendí eso como un gasto. Escribilo con monto y moneda, por ejemplo «450 uyu farmacia», "
+    "o mandame la foto del comprobante."
+)
 TOAST_FALTA = "Antes elegí {que}."
 TOAST_OK = "Listo."
 ELEGIR_CATEGORIA = "Elegí la categoría:"
