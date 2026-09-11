@@ -1,6 +1,8 @@
 """Todos los textos que ve el usuario en Telegram. Español rioplatense, tuteo.
 
-Solo strings y formato; nada de lógica de negocio. Cambiar un texto no toca código.
+Solo strings y formato; nada de lógica de negocio. Cambiar un texto no toca código. También vive
+acá el formato de números y porcentajes, para que la plata se vea igual en la tarjeta, en los
+avisos y en el reporte.
 """
 
 from __future__ import annotations
@@ -38,6 +40,18 @@ GUARDADO_SIN_DASHBOARD = (
 TC_FALTANTE = (
     "Falta el tipo de cambio de {mes} en la pestaña Config del Sheet. Cargalo y tocá ✅ de nuevo."
 )
+FX_FIJADO = (
+    "Tipo de cambio de {mes}: {valor} pesos por dólar (fuente: {fuente}).\n"
+    "Todas las cuentas del mes usan ese número. Si querés otro, editalo en la pestaña Config."
+)
+FX_REUSADO = (
+    "No pude consultar la cotización ({motivo}). Dejé el tipo de cambio de {mes} en {valor}, "
+    "el mismo de {desde}.\nSi querés corregirlo, editalo en la pestaña Config del Sheet."
+)
+FX_SIN_DATO = (
+    "No pude fijar el tipo de cambio de {mes} ({motivo}) y no tengo uno anterior para reusar.\n"
+    "Cargalo a mano en la pestaña Config (fila tipo «tc»): sin eso no puedo guardar gastos."
+)
 PEDIR_MONTO = "Escribí el monto (negativo si es un reembolso). Ej.: 1250,50"
 PEDIR_FECHA = "Escribí la fecha del gasto. Ej.: 3/9, 03/09/2026 o «hoy»"
 PEDIR_MONTO_USD = "El comprobante está en {moneda}. Escribí cuánto fue en dólares (USD)."
@@ -61,13 +75,26 @@ _TIPO_DOC = {
 }
 
 
+def numero(valor: Decimal | float, decimales: int = 2) -> str:
+    """1234.5 → «1.234,50»: punto para miles y coma para decimales, como acá."""
+    return f"{valor:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def usd(valor: Decimal | float, decimales: int = 2) -> str:
+    return f"U$S {numero(valor, decimales)}"
+
+
+def pct(fraccion: Decimal | float, decimales: int = 0) -> str:
+    """0.2333 → «23 %»."""
+    return f"{numero(Decimal(str(fraccion)) * 100, decimales)} %"
+
+
 def monto_fmt(monto: Decimal | None, moneda: Moneda | None) -> str:
     if monto is None:
         return "monto: ?"
-    entero = f"{abs(monto):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     signo = "-" if monto < 0 else ""
     simbolo = {Moneda.UYU: "$", Moneda.USD: "U$S", None: "¿$ o U$S?"}[moneda]
-    return f"{signo}{simbolo} {entero}"
+    return f"{signo}{simbolo} {numero(abs(monto))}"
 
 
 def paso_1(p: Pendiente) -> str:
