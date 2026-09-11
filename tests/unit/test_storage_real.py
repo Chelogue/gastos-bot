@@ -309,6 +309,8 @@ async def test_dashboard_se_puede_leer_de_vuelta(cliente: SheetsCliente) -> None
     await repo.recalcular(indicador("2026-09"))
     await repo.recalcular(indicador("2026-08"))
     resumenes = await repo.listar()
+    ws = cliente.hoja_o_error("Dashboard")
+    assert ws.ultimo_render == "UNFORMATTED_VALUE"  # si no, el Sheet devuelve redondeado
     assert [r.mes for r in resumenes] == ["2026-08", "2026-09"]  # en orden cronológico
     assert resumenes[0].n_registros == 1 and resumenes[0].cumplimiento == "✅"
     assert resumenes[0].necesidades_usd == Decimal("31.25")

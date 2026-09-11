@@ -112,6 +112,7 @@ class FakeWorksheet:
         self.isSheetHidden = False
         self.values: list[list[str]] = []
         self.rows, self.cols = rows, cols
+        self.ultimo_render: str | None = None
 
     @property
     def index(self) -> int:
@@ -120,7 +121,8 @@ class FakeWorksheet:
     def row_values(self, n: int) -> list[str]:
         return list(self.values[n - 1]) if len(self.values) >= n else []
 
-    def get_all_values(self) -> list[list[str]]:
+    def get_all_values(self, **kwargs: Any) -> list[list[str]]:
+        self.ultimo_render = kwargs.get("value_render_option")
         return [list(r) for r in self.values]
 
     def update(self, values: list[list[Any]], range_name: str = "A1", **_kwargs: Any) -> None:

@@ -42,7 +42,9 @@ class SheetsDashboardRepo:
     async def listar(self) -> list[ResumenMes]:
         def leer() -> list[ResumenMes]:
             ws = self._c.hoja_o_error(schema.TAB_DASHBOARD)
-            return filas_a_resumenes(ws.get_all_values()[1:])
+            # Sin formatear: las celdas se muestran redondeadas y perderíamos los centavos.
+            filas = ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
+            return filas_a_resumenes(filas[1:])
 
         return await en_hilo(leer)
 
