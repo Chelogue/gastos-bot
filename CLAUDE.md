@@ -27,10 +27,10 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** Fase 3 (R11–R13) construida y testeada en la rama `feat/fase-3-texto-consultas`:
-registro por texto, `/total` y «cuánto llevamos», `/ultimos`, `/borrar` y `/editar`. Falta
-desplegarla (OK de Marcelo) y registrar el menú de comandos con
-`scripts/set_webhook.py --comandos`. Las fases 0 a 2 están en producción.
+**Fase en curso:** Fases 0 a 3 desplegadas. La Fase 3 salió a producción el 2026-09-11 y se
+probó `/total` y `/ultimos` contra el Sheet real; el menú de comandos está registrado en Telegram.
+Siguiente: Fase 4 (P1: duplicados, nota desde el caption, /reporte a demanda, recurrentes,
+/dashboard) y el bake-off R19 cuando estén los 30 comprobantes.
 
 **Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
 en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
@@ -42,5 +42,5 @@ token OIDC de `gastos-bot-sa`, que el servicio verifica contra `JOBS_OIDC_EMAIL`
 **Requerimientos cerrados:** R1–R6, R14–R18 (validados de punta a punta con fotos reales el
 2026-09-10). R7, R8, R10 y la autorización OIDC de los jobs: en producción y verificados.
 R9: el reporte se probó con los datos reales del Sheet contra Telegram; falta verlo salir solo
-el día 16. R11, R12, R13: construidos y cubiertos por tests, sin desplegar todavía.
-R19: script listo, faltan los 30 comprobantes.
+el día 16. R11, R12, R13: desplegados; `/total` y `/ultimos` verificados en producción, `/editar`
+y `/borrar` cubiertos por tests. R19: script listo, faltan los 30 comprobantes.
