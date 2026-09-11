@@ -78,3 +78,26 @@ async def reporte(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await flujo_de(context).reporte(
         telegram_id=user.id, chat_id=message.chat_id, cual=" ".join(args) or None
     )
+
+
+async def dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, user = update.effective_message, update.effective_user
+    if message is None or user is None:
+        return
+    await flujo_de(context).dashboard(telegram_id=user.id, chat_id=message.chat_id)
+
+
+async def repetir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, user = update.effective_message, update.effective_user
+    if message is None or user is None:
+        return
+    gasto_id = _id_del_comando(context)
+    if gasto_id is None:
+        await message.reply_text(messages.USO_REPETIR)
+        return
+    await flujo_de(context).repetir(
+        update_id=update.update_id,
+        telegram_id=user.id,
+        chat_id=message.chat_id,
+        gasto_id=gasto_id,
+    )

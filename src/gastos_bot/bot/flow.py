@@ -256,6 +256,19 @@ class Flujo:
             )
             await self.tg.enviar(chat_id, msg.reporte(reporte))
 
+    async def dashboard(self, *, telegram_id: int, chat_id: int, meses: int = 6) -> None:
+        """La tabla mensual del Sheet, resumida en el chat (R24)."""
+        with bind_context(telegram_id=telegram_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            try:
+                filas = await self.st.dashboard.listar()
+            except StorageError as exc:
+                await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+                return
+            link = quincenal.link_sheet(self.sheet_id) if self.sheet_id else None
+            await self.tg.enviar(chat_id, msg.dashboard(filas[-meses:], link))
+
     async def ultimos(self, *, telegram_id: int, chat_id: int, cuantos: int = 10) -> None:
         """Los últimos movimientos con su ID, para poder editarlos o borrarlos."""
         with bind_context(telegram_id=telegram_id):
@@ -313,6 +326,34 @@ class Flujo:
                 origen=gasto.tipo_doc,
                 compartido=gasto.compartido,
                 gasto_id=gasto.id,
+                creado=ahora,
+                expira=ahora + self.ttl,
+            )
+            await self._mostrar_resumen(pendiente, chat_id)
+
+    async def repetir(
+        self, *, update_id: int, telegram_id: int, chat_id: int, gasto_id: str
+    ) -> None:
+        """Copia un gasto ya guardado con la fecha de hoy: alquiler, suscripciones (R23, ADR 0009).
+
+        No crea nada solo: abre la tarjeta con todo cargado y se confirma como cualquier alta.
+        """
+        with bind_context(telegram_id=telegram_id, gasto_id=gasto_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            gasto = await self._buscar_gasto(gasto_id, chat_id)
+            if gasto is None:
+                return
+            ahora = self.reloj()
+            hoy = a_local(ahora, self.zona).date()
+            pendiente = Pendiente(
+                pendiente_id=f"r-{secrets.token_hex(4)}",
+                update_id=update_id,
+                telegram_id=telegram_id,
+                extraccion=_como_extraccion(gasto).model_copy(update={"fecha": hoy}),
+                origen=TipoDoc.TEXTO,  # no hay comprobante nuevo
+                compartido=gasto.compartido,
+                repetido_de=gasto.id,
                 creado=ahora,
                 expira=ahora + self.ttl,
             )
@@ -668,7 +709,8 @@ class Flujo:
     ) -> Gasto:
         e = p.extraccion
         assert p.monto is not None and p.moneda is not None and p.subcategoria is not None
-        notas = [x for x in (e.cuota, p.nota_caption) if x]
+        repetido = f"repetido de {p.repetido_de}" if p.repetido_de else None
+        notas = [x for x in (e.cuota, p.nota_caption, repetido) if x]
         if e.moneda_original:
             notas.append(f"original: {e.monto_original or '?'} {e.moneda_original}")
         tipo_doc = TipoDoc.TEXTO if p.origen is TipoDoc.TEXTO else TipoDoc(e.tipo_doc.value)

@@ -162,7 +162,8 @@ class Pendiente(BaseModel):
     estado: EstadoPendiente = EstadoPendiente.ABIERTO
     esperando: CampoEsperado | None = None
     mensaje_tarjeta_id: int | None = None  # message_id de la tarjeta, para editarla
-    gasto_id: str | None = None  # se completa al guardar
+    gasto_id: str | None = None  # se completa al guardar; en /editar apunta a la fila a reescribir
+    repetido_de: str | None = None  # ID del gasto que se está repitiendo (R23)
 
     # Valores efectivos = extracción con las ediciones encima.
     @property

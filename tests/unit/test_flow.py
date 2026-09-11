@@ -566,3 +566,50 @@ async def test_reporte_de_la_quincena_anterior_ya_cerrada() -> None:
     texto = m.tg.enviados[-1]["texto"]
     assert "primera quincena (1 al 15)" in texto and "en curso" not in texto
     assert "Gastaron U$S 31,26 en 1 movimiento." in texto
+
+
+async def test_dashboard_resume_los_meses_en_el_chat() -> None:
+    m = Mundo()
+    m.flujo.sheet_id = "hoja123"
+    await m.flujo.dashboard(telegram_id=MARCELO, chat_id=MARCELO)
+    assert m.tg.enviados[-1]["texto"] == msg.SIN_DASHBOARD
+
+    await _guardar_un_gasto(m)
+    await m.flujo.dashboard(telegram_id=MARCELO, chat_id=MARCELO)
+    texto = m.tg.enviados[-1]["texto"]
+    assert texto.startswith("📈 Dashboard · mes")
+    assert "Setiembre ✅" in texto
+    assert "• Necesidades U$S 31,26 (0 %) · Deseos U$S 0,00 (0 %)" in texto
+    assert "• Ahorro 100 % del ingreso · 1 movimiento" in texto
+    assert "📄 La tabla completa: https://docs.google.com/spreadsheets/d/hoja123" in texto
+
+
+async def test_repetir_copia_el_gasto_con_la_fecha_de_hoy() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    m.reloj = datetime(2026, 9, 25, 15, 0, tzinfo=UTC)  # quince días después
+
+    await m.flujo.repetir(
+        update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="g-260910-001"
+    )
+    texto = m.tg.enviados[-1]["texto"]
+    assert "🔁 Repetido de G-260910-001 · 👥 Compartido" in texto
+    assert "📅 2026-09-25" in texto and "$ 1.250,50" in texto
+    pid = m.pendiente_id()
+    assert m.tg.enviados[-1]["teclado"][0][0].data == f"g:{pid}"  # listo para guardar
+
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+    nuevo = m.gastos.filas["2026-09"][1]
+    assert nuevo.id == "G-260925-001" and nuevo.fecha_gasto == date(2026, 9, 25)
+    assert nuevo.monto == Decimal("1250.50") and nuevo.subcategoria == "Supermercado"
+    assert nuevo.compartido and nuevo.tipo_doc is TipoDoc.TEXTO
+    assert nuevo.link_imagen is None and nuevo.nota == "repetido de G-260910-001"
+    assert len(m.drive.archivos) == 1  # el del gasto original, nada nuevo
+
+
+async def test_repetir_un_id_que_no_existe() -> None:
+    m = Mundo()
+    await m.flujo.repetir(
+        update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-009"
+    )
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_NO_ENCONTRADO.format(id="G-260910-009")
