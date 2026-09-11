@@ -7,6 +7,7 @@ import pytest
 
 from gastos_bot.bot import messages as msg
 from gastos_bot.bot.flow import Flujo
+from gastos_bot.domain.categorias import Catalogo, Rubro
 from gastos_bot.domain.models import (
     Config,
     Estado,
@@ -435,4 +436,59 @@ async def test_borrar_dos_veces_avisa() -> None:
     await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
     await m.toque("bs:G-260910-001")
     await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_YA_BORRADO.format(id="G-260910-001")
+
+
+async def test_editar_cambia_la_fila_y_recalcula() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    recalculos = len(m.dashboard.recalculos)
+    archivos = dict(m.drive.archivos)
+
+    await m.flujo.editar(update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="g-260910-001")
+    texto = m.tg.enviados[-1]["texto"]
+    assert "✏️ Editando G-260910-001 · 👥 Compartido" in texto
+    assert "$ 1.250,50" in texto and "Supermercado" in texto
+    pid = m.pendiente_id()
+    assert m.tg.enviados[-1]["teclado"][0][0].data == f"g:{pid}"  # se puede guardar ya
+
+    await m.toque(f"k:{pid}")  # cambiar de categoría
+    catalogo = Catalogo.inicial()
+    indice = catalogo.nombres_activos().index("Ocio")
+    await m.toque(f"kc:{pid}:{indice}")
+    await m.toque(f"c:{pid}:p")  # y pasarlo a personal
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.id == "G-260910-001" and gasto.subcategoria == "Ocio"
+    assert gasto.rubro is Rubro.DESEOS and not gasto.compartido
+    assert gasto.editado and gasto.fecha_modificacion is not None
+    assert gasto.monto == Decimal("1250.50") and gasto.link_imagen is not None
+    assert gasto.fecha_envio == m.gastos.filas["2026-09"][0].fecha_envio  # no se movió de mes
+    assert "Actualicé G-260910-001" in m.tg.editados[-1]["texto"]
+    assert len(m.dashboard.recalculos) == recalculos + 1
+    assert m.drive.archivos == archivos  # editar no toca Drive
+
+
+async def test_editar_el_monto_reconvierte_a_usd() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.editar(update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    pid = m.pendiente_id()
+    await m.toque(f"m:{pid}")
+    await m.texto("800")
+    assert await m.toque(f"g:{pid}") == msg.TOAST_OK
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.monto == Decimal("800") and gasto.monto_usd == Decimal("20")
+
+
+async def test_editar_un_gasto_borrado_o_inexistente() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.editar(update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-999999-001")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_NO_ENCONTRADO.format(id="G-999999-001")
+
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    await m.toque("bs:G-260910-001")
+    await m.flujo.editar(update_id=8, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
     assert m.tg.enviados[-1]["texto"] == msg.GASTO_YA_BORRADO.format(id="G-260910-001")

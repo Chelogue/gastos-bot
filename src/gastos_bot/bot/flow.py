@@ -24,8 +24,10 @@ from gastos_bot.domain.models import (
     CampoEsperado,
     Estado,
     EstadoPendiente,
+    Extraccion,
     Gasto,
     Moneda,
+    MonedaExtraida,
     Pendiente,
     Persona,
     TipoDoc,
@@ -76,6 +78,22 @@ def _ahora_utc() -> datetime:
 
 def _activos(gastos: list[Gasto]) -> list[Gasto]:
     return [g for g in gastos if g.estado is Estado.ACTIVO]
+
+
+def _como_extraccion(gasto: Gasto) -> Extraccion:
+    """Un gasto guardado visto como extracción, para reusar la tarjeta al editar (R13)."""
+    try:
+        tipo = TipoDocExtraido(gasto.tipo_doc.value)
+    except ValueError:  # tipo_doc = texto no existe del lado del LLM
+        tipo = TipoDocExtraido.OTRO
+    return Extraccion(
+        tipo_doc=tipo,
+        monto=gasto.monto,
+        moneda=MonedaExtraida(gasto.moneda.value),
+        fecha=gasto.fecha_gasto,
+        comercio=gasto.comercio or None,
+        subcategoria=gasto.subcategoria,
+    )
 
 
 class Flujo:
@@ -274,6 +292,80 @@ class Flujo:
                 kb.confirmar_borrado(gasto.id),
             )
 
+    async def editar(
+        self, *, update_id: int, telegram_id: int, chat_id: int, gasto_id: str
+    ) -> None:
+        """Abre la misma tarjeta del alta, pero apuntando a una fila que ya existe (R13)."""
+        with bind_context(telegram_id=telegram_id, gasto_id=gasto_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            gasto = await self._buscar_gasto(gasto_id, chat_id)
+            if gasto is None:
+                return
+            if gasto.estado is Estado.ELIMINADO:
+                await self.tg.enviar(chat_id, msg.GASTO_YA_BORRADO.format(id=gasto.id))
+                return
+            ahora = self.reloj()
+            pendiente = Pendiente(
+                pendiente_id=f"e-{secrets.token_hex(4)}",
+                update_id=update_id,
+                telegram_id=telegram_id,
+                extraccion=_como_extraccion(gasto),
+                origen=gasto.tipo_doc,
+                compartido=gasto.compartido,
+                gasto_id=gasto.id,
+                creado=ahora,
+                expira=ahora + self.ttl,
+            )
+            await self._mostrar_resumen(pendiente, chat_id)
+
+    async def _guardar_edicion(self, p: Pendiente, chat_id: int) -> str | None:
+        """Reescribe la fila del gasto con lo que quedó en la tarjeta (R13)."""
+        assert p.gasto_id and p.monto is not None and p.moneda is not None
+        assert p.subcategoria is not None
+        original = await self._buscar_gasto(p.gasto_id, chat_id)
+        if original is None:
+            return None
+        mes = mes_de_id(original.id) or mes_de(original.fecha_envio.date())
+        config = await self.st.config.cargar()
+        tc = config.tc_del_mes(mes)
+        if tc is None:
+            await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
+            return msg.TC_FALTANTE.format(mes=mes)[:200]
+        catalogo = await self.st.categorias.catalogo()
+        rubro = catalogo.rubro_de(p.subcategoria)
+        actualizado = original.model_copy(
+            update={
+                "fecha_gasto": p.fecha or original.fecha_gasto,
+                "compartido": bool(p.compartido),
+                "monto": p.monto,
+                "moneda": p.moneda,
+                "tc_mes": tc.valor,
+                "monto_usd": a_usd(p.monto, p.moneda, tc.valor),
+                "rubro": rubro,
+                "subcategoria": p.subcategoria,
+                "editado": True,
+                "fecha_modificacion": a_local(self.reloj(), self.zona),
+            }
+        )
+        try:
+            if not await self.st.gastos.actualizar(actualizado):
+                await self.tg.enviar(chat_id, msg.GASTO_NO_ENCONTRADO.format(id=actualizado.id))
+                return None
+        except StorageError as exc:
+            log.warning("edicion_fallida", motivo=str(exc))
+            await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+            return msg.ERROR_GUARDAR.format(motivo=exc)[:200]
+        await self.st.pendientes.guardar(p.model_copy(update={"estado": EstadoPendiente.GUARDADO}))
+        log.info("gasto_editado", gasto_id=actualizado.id, mes=mes)
+        await self.tg.editar(
+            chat_id,
+            p.mensaje_tarjeta_id or 0,
+            msg.EDITADO.format(id=actualizado.id, resumen=msg.gasto_linea(actualizado)),
+        )
+        await self._recalcular_dashboard(mes, config, tc.valor)
+        return msg.TOAST_OK
+
     async def _buscar_gasto(self, gasto_id: str, chat_id: int) -> Gasto | None:
         limpio = gasto_id.strip().upper()
         try:
@@ -465,6 +557,8 @@ class Flujo:
 
     async def _confirmar(self, p: Pendiente, persona: Persona, chat_id: int) -> str | None:
         assert p.monto is not None and p.moneda is not None and p.subcategoria is not None
+        if p.gasto_id:  # la tarjeta salió de /editar: no hay alta ni subida a Drive (R13)
+            return await self._guardar_edicion(p, chat_id)
         ahora = self.reloj()
         envio_local = a_local(ahora, self.zona)
         mes = mes_de(envio_local.date())

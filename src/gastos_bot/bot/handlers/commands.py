@@ -52,3 +52,19 @@ async def borrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await message.reply_text(messages.USO_BORRAR)
         return
     await flujo_de(context).borrar(telegram_id=user.id, chat_id=message.chat_id, gasto_id=gasto_id)
+
+
+async def editar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, user = update.effective_message, update.effective_user
+    if message is None or user is None:
+        return
+    gasto_id = _id_del_comando(context)
+    if gasto_id is None:
+        await message.reply_text(messages.USO_EDITAR)
+        return
+    await flujo_de(context).editar(
+        update_id=update.update_id,
+        telegram_id=user.id,
+        chat_id=message.chat_id,
+        gasto_id=gasto_id,
+    )

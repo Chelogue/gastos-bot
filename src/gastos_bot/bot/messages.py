@@ -28,7 +28,9 @@ AYUDA = (
     "• También podés escribirlo sin foto: «450 uyu farmacia».\n\n"
     "Comandos:\n"
     "/total — cómo viene la quincena (o preguntame «cuánto llevamos»)\n"
-    "/ultimos — los últimos 10 gastos con su ID"
+    "/ultimos — los últimos 10 gastos con su ID\n"
+    "/editar ID — corregir un gasto ya guardado\n"
+    "/borrar ID — darlo de baja (la fila y la foto quedan)"
 )
 NO_COMPROBANTE = "Eso no parece un comprobante de gasto. Si lo es, probá con una foto más nítida."
 ERROR_EXTRACCION = "No pude leer el comprobante ahora ({motivo}). Reenviá la foto en un rato."
@@ -68,6 +70,8 @@ BORRAR_CONFIRMAR = (
 )
 BORRADO = "🗑️ Borré {id}. Queda en el Sheet como eliminado y ya no cuenta en el Dashboard."
 BORRAR_CANCELADO = "Listo, no toqué nada."
+EDITANDO = "✏️ Editando {id}"
+EDITADO = "✏️ Actualicé {id}\n{resumen}"
 SIN_GASTOS = "Todavía no hay gastos registrados. Mandame una foto o escribime «450 uyu farmacia»."
 REPORTE_SIN_TC = (
     "Tenía que mandarles el reporte de {mes}, pero falta el tipo de cambio del mes en la pestaña "
@@ -137,8 +141,14 @@ def resumen(p: Pendiente, rubro: str | None) -> str:
     rojo = "🔴 " if e.tipo_doc is TipoDocExtraido.REEMBOLSO else ""
     monto_editado = " ✏️" if ed.monto is not None or ed.moneda is not None else ""
     fecha = p.fecha.isoformat() if p.fecha else "fecha de hoy"
+    # Editando un gasto ya guardado (R13) el tipo de documento no aporta: manda el ID.
+    titulo = (
+        EDITANDO.format(id=p.gasto_id)
+        if p.gasto_id
+        else f"{rojo}{_TIPO_DOC[e.tipo_doc].capitalize()}"
+    )
     lineas = [
-        f"{rojo}{_TIPO_DOC[e.tipo_doc].capitalize()} · {quien[p.compartido]}",
+        f"{titulo} · {quien[p.compartido]}",
         f"💰 {monto_fmt(p.monto, p.moneda)}{monto_editado}",
         f"🏪 {e.comercio or 'comercio: ?'}",
         f"📅 {fecha}{' ✏️' if ed.fecha else ''}",

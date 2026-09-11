@@ -170,3 +170,26 @@ def test_total_y_ultimos(client: TestClient, fake_bot: FakeBot) -> None:
     assert "quincena en curso" in fake_bot.sent[-1]["text"]
     _post(client, _comando(2, "/ultimos"))
     assert fake_bot.sent[-1]["text"] == msg.SIN_GASTOS
+
+
+def test_borrar_y_editar_sin_id_explican_como_se_usa(client: TestClient, fake_bot: FakeBot) -> None:
+    _post(client, _comando(1, "/borrar"))
+    assert fake_bot.sent[-1]["text"] == msg.USO_BORRAR
+    _post(client, _comando(2, "/editar"))
+    assert fake_bot.sent[-1]["text"] == msg.USO_EDITAR
+
+
+def test_borrar_un_gasto_de_punta_a_punta(client: TestClient, fake_bot: FakeBot) -> None:
+    _post(client, foto(1))
+    pid = fake_bot.sent[0]["reply_markup"].inline_keyboard[0][0].callback_data.split(":")[1]
+    _post(client, toque(2, f"c:{pid}:s", 2))
+    _post(client, toque(3, f"g:{pid}", 2))
+
+    _post(client, _comando(4, "/ultimos"))
+    assert "G-" in fake_bot.sent[-1]["text"]
+    gasto_id = fake_bot.sent[-1]["text"].split("• ")[1].split(" ·")[0]
+
+    _post(client, _comando(5, f"/borrar {gasto_id}"))
+    assert "¿Borro este gasto?" in fake_bot.sent[-1]["text"]
+    _post(client, toque(6, f"bs:{gasto_id}", 9))
+    assert f"Borré {gasto_id}" in fake_bot.edited[-1]["text"]
