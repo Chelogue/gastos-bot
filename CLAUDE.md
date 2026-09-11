@@ -27,10 +27,10 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** Fase 2 construida y testeada con dobles (TC automático, reporte quincenal,
-endpoints `/jobs/*` con OIDC). Falta desplegarla y crear los jobs de Cloud Scheduler
-(`infra/setup_scheduler.sh`), las dos cosas requieren OK de Marcelo. Próxima: Fase 3 (R11–R13:
-registro por texto, /total, /ultimos, editar y borrar).
+**Fase en curso:** Fase 2 desplegada el 2026-09-11. Los dos jobs de Cloud Scheduler existen y
+están habilitados; el primer disparo real de `/jobs/fx` devolvió 200 con el token OIDC (no tocó
+nada: septiembre ya tenía TC). El primer reporte automático sale el 2026-09-16 a las 09:00.
+Próxima: Fase 3 (R11–R13: registro por texto, /total, /ultimos, editar y borrar).
 
 **Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
 en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
@@ -40,5 +40,6 @@ token OIDC de `gastos-bot-sa`, que el servicio verifica contra `JOBS_OIDC_EMAIL`
 (variable de repo `CLOUD_RUN_URL`).
 
 **Requerimientos cerrados:** R1–R6, R14–R18 (validados de punta a punta con fotos reales el
-2026-09-10). R7, R8, R9, R10: implementados y cubiertos por tests; se cierran cuando corran en
-producción (primer disparo de los jobs). R19: script listo, faltan los 30 comprobantes.
+2026-09-10). R7, R8, R10 y la autorización OIDC de los jobs: en producción y verificados.
+R9: el reporte se probó con los datos reales del Sheet contra Telegram; falta verlo salir solo
+el día 16. R19: script listo, faltan los 30 comprobantes.
