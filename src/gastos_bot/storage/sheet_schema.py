@@ -8,13 +8,14 @@ requiere OK explícito (ver CLAUDE.md).
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from gastos_bot.domain.categorias import CATEGORIAS_INICIALES, Rubro
 
 TAB_DASHBOARD = "Dashboard"
+TAB_MOVIMIENTOS = "Movimientos"  # todas las pestañas de mes apiladas por fórmula (ADR 0011)
 TAB_CONFIG = "Config"
 TAB_CATEGORIAS = "Categorias"
 TAB_PENDIENTES = "Pendientes"
@@ -89,6 +90,32 @@ CONFIG_TIPO_PARAM = "param"  # clave = nombre del parámetro, valor
 CONFIG_TIPO_CARPETA = "carpeta"  # clave = ruta relativa en Drive, valor = folder id (caché)
 
 CATEGORIAS_COLUMNAS: tuple[str, ...] = ("subcategoria", "rubro", "activa")
+
+
+def letra_columna(indice: int) -> str:
+    """0 → A, 25 → Z, 26 → AA."""
+    letras, n = "", indice + 1
+    while n:
+        n, resto = divmod(n - 1, 26)
+        letras = chr(ord("A") + resto) + letras
+    return letras
+
+
+def formula_movimientos(meses: Sequence[str], separador: str = ",") -> str:
+    """Apila las pestañas de mes en un solo rango vivo, para tableros y tablas dinámicas.
+
+    El separador de argumentos depende del idioma del Sheet (``,`` o ``;``); el separador de filas
+    del literal ``{…}`` es ``;`` en todos. Quien escribe la fórmula prueba y verifica.
+    """
+    if not meses:
+        return ""
+    hasta = letra_columna(len(MES_COLUMNAS) - 1)
+    partes = ";".join(f"'{mes}'!A2:{hasta}" for mes in sorted(meses))
+    sep = separador
+    return f'=IFERROR(QUERY({{{partes}}}{sep}"select * where Col1 is not null"{sep}0){sep}"")'
+
+
+SEPARADORES_FORMULA = (",", ";")
 
 PENDIENTES_COLUMNAS: tuple[str, ...] = (
     "pendiente_id",

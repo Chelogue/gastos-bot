@@ -103,7 +103,8 @@ ETIQUETAS_POR_TAB: dict[str, dict[str, str]] = {
 
 def etiquetas(titulo: str, columnas: tuple[str, ...]) -> tuple[str, ...]:
     """Encabezado visible para una pestaña: etiqueta si existe, si no la clave técnica."""
-    mapa = ETIQUETAS_MES if schema.es_pestana_de_mes(titulo) else ETIQUETAS_POR_TAB.get(titulo, {})
+    como_mes = schema.es_pestana_de_mes(titulo) or titulo == schema.TAB_MOVIMIENTOS
+    mapa = ETIQUETAS_MES if como_mes else ETIQUETAS_POR_TAB.get(titulo, {})
     return tuple(mapa.get(c, c) for c in columnas)
 
 

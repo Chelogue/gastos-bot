@@ -12,8 +12,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from gastos_bot.logging_setup import get_logger
 from gastos_bot.storage import sheet_estilo as estilo
 from gastos_bot.storage import sheet_schema as schema
+
+log = get_logger("gastos_bot.storage.sheet_setup")
 
 TABS_POR_DEFECTO = frozenset({"Sheet1", "Hoja 1", "Hoja1"})
 FILAS_INICIALES = 1000
@@ -63,6 +66,34 @@ def _asegurar_pestana(
     return ws
 
 
+def asegurar_movimientos(sh: Any, resultado: Resultado | None = None) -> Any:
+    """Pestaña ``Movimientos``: todas las pestañas de mes apiladas por fórmula (ADR 0011).
+
+    Es el rango que leen Looker Studio y las tablas dinámicas. Se reescribe cuando aparece un mes
+    nuevo. La fórmula se prueba con cada separador de argumentos hasta que el Sheet la acepta.
+    """
+    resultado = resultado or Resultado()
+    ws = _asegurar_pestana(sh, schema.TAB_MOVIMIENTOS, schema.MES_COLUMNAS, resultado)
+    meses = sorted(t for t in _por_titulo(sh) if schema.es_pestana_de_mes(t))
+    for separador in schema.SEPARADORES_FORMULA:
+        formula = schema.formula_movimientos(meses, separador)
+        ws.update(values=[[formula]], range_name="A2", value_input_option="USER_ENTERED")
+        if not _da_error(ws):
+            return ws
+        log.warning("formula_movimientos_rechazada", separador=separador)
+    resultado.avisos.append(
+        f"{schema.TAB_MOVIMIENTOS}: el Sheet no aceptó la fórmula de consolidación"
+    )
+    return ws
+
+
+def _da_error(ws: Any) -> bool:
+    """Sheets devuelve el valor calculado: si la fórmula no le gustó, empieza con ``#``."""
+    valores = ws.get_all_values()
+    celda = valores[1][0] if len(valores) > 1 and valores[1] else ""
+    return str(celda).startswith("#")
+
+
 def _indice_para_mes(sh: Any, mes: str) -> int:
     """Después de Dashboard y en orden cronológico con las otras pestañas de mes (R5)."""
     meses = sorted(t for t in _por_titulo(sh) if schema.es_pestana_de_mes(t) and t != mes)
@@ -77,6 +108,7 @@ def asegurar_pestana_mes(sh: Any, mes: str, resultado: Resultado | None = None) 
         return ws
     ws = _asegurar_pestana(sh, mes, schema.MES_COLUMNAS, resultado, index=_indice_para_mes(sh, mes))
     sh.batch_update({"requests": _diseno_mes(ws.id, sin_bandas=False, reglas_previas=0)})
+    asegurar_movimientos(sh, resultado)  # el rango consolidado tiene que incluir el mes nuevo
     return ws
 
 
@@ -110,7 +142,8 @@ def _completar_ids(ws: Any, telegram_ids: Mapping[str, int | None], resultado: R
 def _requests_orden_y_ocultas(sh: Any) -> list[dict[str, Any]]:
     titulos = _por_titulo(sh)
     meses = sorted(t for t in titulos if schema.es_pestana_de_mes(t))
-    orden = [schema.TAB_DASHBOARD, *meses, *schema.TABS_OCULTAS]
+    orden = [schema.TAB_DASHBOARD, *meses, schema.TAB_MOVIMIENTOS, *schema.TABS_OCULTAS]
+    orden = [t for t in orden if t in titulos]
     requests: list[dict[str, Any]] = []
     for i, titulo in enumerate(orden):
         ws = titulos[titulo]
@@ -332,6 +365,7 @@ def asegurar_estructura(
     pendientes = _asegurar_pestana(
         sh, schema.TAB_PENDIENTES, schema.PENDIENTES_COLUMNAS, resultado, forzar_encabezado=forzar
     )
+    movimientos = asegurar_movimientos(sh, resultado)
 
     _sembrar_filas(
         config,
@@ -361,12 +395,13 @@ def asegurar_estructura(
     requests += _ensanchar(dashboard.id, meta_dashboard, len(schema.DASHBOARD_COLUMNAS))
     requests += _diseno_dashboard(dashboard.id, meta_dashboard)
     for titulo, ws in _por_titulo(sh).items():
-        if schema.es_pestana_de_mes(titulo):
+        if schema.es_pestana_de_mes(titulo) or titulo == schema.TAB_MOVIMIENTOS:
             # etiquetas al día
             _asegurar_pestana(sh, titulo, schema.MES_COLUMNAS, resultado, forzar_encabezado=forzar)
             m = meta.get(ws.id, vacio)
             requests += _ensanchar(ws.id, m, len(schema.MES_COLUMNAS))
             requests += _diseno_mes(ws.id, sin_bandas=m.tiene_bandas, reglas_previas=m.reglas)
+    _ = movimientos  # su diseño va con el de las pestañas de mes
     simples = (
         (config, schema.CONFIG_COLUMNAS, estilo.ANCHOS_CONFIG),
         (categorias, schema.CATEGORIAS_COLUMNAS, estilo.ANCHOS_CATEGORIAS),
