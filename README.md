@@ -8,6 +8,21 @@ Bot de Telegram para que dos personas registren gastos con una foto, los archive
 - **Decisiones:** `docs/decisions/`
 - **Operación:** `docs/runbook.md`
 
+## Qué hace el bot
+
+| Lo que mandás | Lo que pasa |
+|---|---|
+| Una foto del comprobante | El modelo lee monto, moneda, fecha, comercio y propone categoría; confirmás con un toque y se archiva en Drive y en el Sheet |
+| Texto, «450 uyu farmacia» | Misma tarjeta, sin imagen (R11) |
+| `/total` o «cuánto llevamos» | Cómo viene la quincena: por persona, por categoría, por moneda y contra los topes 50/30/20 |
+| `/ultimos` | Los últimos 10 gastos con su ID |
+| `/editar G-260910-001` | Reabre la tarjeta y reescribe esa fila (no toca la foto) |
+| `/borrar G-260910-001` | La marca como eliminada, con confirmación; la fila y la foto quedan |
+
+Los días 1 y 16 a las 09:00 llega el reporte quincenal, y el día 1 a las 00:05 se fija el tipo de
+cambio del mes. El menú de comandos de Telegram se registra con
+`uv run python scripts/set_webhook.py --comandos`.
+
 ## Requisitos
 
 `uv` (gestiona Python 3.12), `gcloud`, `cloudflared` para el túnel local. En macOS: `brew install uv cloudflared && brew install --cask google-cloud-sdk`.
