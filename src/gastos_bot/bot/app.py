@@ -95,6 +95,7 @@ def flujo_real(settings: Settings) -> FlujoFactory:
             mensajero=mensajero,
             zona=settings.tz,
             ttl_horas=settings.pendiente_ttl_hours,
+            sheet_id=settings.google_sheet_id,
         )
 
     return crear
@@ -122,6 +123,8 @@ def build_application(
     application.add_handler(TypeHandler(Update, portero), group=-1)
     application.add_handler(CommandHandler("start", commands.start))
     application.add_handler(CommandHandler("ayuda", commands.ayuda))
+    application.add_handler(CommandHandler("total", commands.total))
+    application.add_handler(CommandHandler("ultimos", commands.ultimos))
     application.add_handler(
         MessageHandler(
             filters.PHOTO | filters.Document.IMAGE | filters.Document.PDF, media.on_media

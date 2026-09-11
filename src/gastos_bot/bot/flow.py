@@ -17,9 +17,11 @@ from gastos_bot.bot import keyboards as kb
 from gastos_bot.bot import messages as msg
 from gastos_bot.domain import ids, naming
 from gastos_bot.domain.categorias import Rubro
+from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos
 from gastos_bot.domain.fx import a_usd
 from gastos_bot.domain.models import (
     CampoEsperado,
+    Estado,
     EstadoPendiente,
     Gasto,
     Moneda,
@@ -29,9 +31,16 @@ from gastos_bot.domain.models import (
     TipoDocExtraido,
 )
 from gastos_bot.domain.parseo import TextoInvalido, parsear_fecha, parsear_monto
-from gastos_bot.domain.quincena import a_local, mes_de, quincena_de
+from gastos_bot.domain.quincena import (
+    a_local,
+    mes_anterior,
+    mes_de,
+    periodo_en_curso,
+    quincena_de,
+)
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida, Extractor
 from gastos_bot.logging_setup import bind_context, get_logger
+from gastos_bot.reports import quincenal
 from gastos_bot.storage.base import StorageError
 from gastos_bot.storage.dashboard import recalcular_mes
 from gastos_bot.storage.factory import Storage
@@ -64,6 +73,10 @@ def _ahora_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def _activos(gastos: list[Gasto]) -> list[Gasto]:
+    return [g for g in gastos if g.estado is Estado.ACTIVO]
+
+
 class Flujo:
     def __init__(
         self,
@@ -73,6 +86,7 @@ class Flujo:
         mensajero: Mensajero,
         zona: str = "America/Montevideo",
         ttl_horas: int = 48,
+        sheet_id: str | None = None,
         reloj: Callable[[], datetime] = _ahora_utc,
     ) -> None:
         self.extractor = extractor
@@ -80,6 +94,7 @@ class Flujo:
         self.tg = mensajero
         self.zona = zona
         self.ttl = timedelta(hours=ttl_horas)
+        self.sheet_id = sheet_id
         self.reloj = reloj
 
     # ---------- entradas ----------
@@ -137,6 +152,12 @@ class Flujo:
                 with bind_context(pendiente_id=p.pendiente_id):
                     await self._aplicar_respuesta(p, chat_id, texto)
                 return
+            if es_consulta_total(texto):  # «cuánto llevamos» (R12)
+                await self.total(telegram_id=telegram_id, chat_id=chat_id)
+                return
+            if es_consulta_ultimos(texto):
+                await self.ultimos(telegram_id=telegram_id, chat_id=chat_id)
+                return
             await self._registrar_texto(
                 update_id=update_id, telegram_id=telegram_id, chat_id=chat_id, texto=texto
             )
@@ -185,6 +206,53 @@ class Flujo:
             pendiente.model_copy(update={"mensaje_tarjeta_id": message_id})
         )
         log.info("pendiente_creado", pendiente_id=pendiente.pendiente_id, origen=pendiente.origen)
+
+    # ---------- consultas (R12) ----------
+
+    async def total(self, *, telegram_id: int, chat_id: int) -> None:
+        """Cómo viene la quincena en curso: mismo cálculo que el reporte quincenal."""
+        with bind_context(telegram_id=telegram_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            hoy = a_local(self.reloj(), self.zona).date()
+            periodo = periodo_en_curso(hoy)
+            mes = periodo.mes.mes
+            try:
+                config = await self.st.config.cargar()
+                tc = config.tc_del_mes(mes)
+                if tc is None:
+                    await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
+                    return
+                gastos = await self.st.gastos.listar_mes(mes)
+            except StorageError as exc:
+                await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+                return
+            reporte = quincenal.armar(
+                periodo=periodo,
+                gastos_del_mes=gastos,
+                config=config,
+                tc=tc.valor,
+                hoy=hoy,
+                sheet_id=self.sheet_id,
+                folder_id=config.carpetas.get(mes),
+            )
+            await self.tg.enviar(chat_id, msg.reporte(reporte))
+
+    async def ultimos(self, *, telegram_id: int, chat_id: int, cuantos: int = 10) -> None:
+        """Los últimos movimientos con su ID, para poder editarlos o borrarlos."""
+        with bind_context(telegram_id=telegram_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            hoy = a_local(self.reloj(), self.zona).date()
+            try:
+                gastos = _activos(await self.st.gastos.listar_mes(mes_de(hoy)))
+                if len(gastos) < cuantos:  # arrancando el mes, se mira también el anterior
+                    previos = _activos(await self.st.gastos.listar_mes(mes_de(mes_anterior(hoy))))
+                    gastos = previos + gastos
+            except StorageError as exc:
+                await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+                return
+            await self.tg.enviar(chat_id, msg.ultimos(gastos[-cuantos:]))
 
     async def procesar_callback(
         self, *, telegram_id: int, chat_id: int, message_id: int, data: str

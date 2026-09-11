@@ -155,3 +155,18 @@ def test_ayuda_y_texto_suelto(client: TestClient, fake_bot: FakeBot) -> None:
     assert fake_bot.sent[-1]["text"] == msg.AYUDA
     _post(client, texto(2, "450 uyu farmacia"))  # R11: texto suelto = gasto escrito a mano
     assert "¿Es un gasto compartido o personal?" in fake_bot.sent[-1]["text"]
+
+
+def _comando(update_id: int, texto: str) -> dict[str, Any]:
+    entidades = [{"type": "bot_command", "offset": 0, "length": len(texto.split()[0])}]
+    return {
+        "update_id": update_id,
+        "message": {**_base(update_id, MARCELO_ID), "text": texto, "entities": entidades},
+    }
+
+
+def test_total_y_ultimos(client: TestClient, fake_bot: FakeBot) -> None:
+    _post(client, _comando(1, "/total"))
+    assert "quincena en curso" in fake_bot.sent[-1]["text"]
+    _post(client, _comando(2, "/ultimos"))
+    assert fake_bot.sent[-1]["text"] == msg.SIN_GASTOS

@@ -343,3 +343,51 @@ async def test_caption_va_a_la_nota(caption: str | None) -> None:
     (gasto,) = m.gastos.filas["2026-09"]
     assert gasto.nota == ("cuota 3/12 · Regalo de cumple" if caption else "cuota 3/12")
     assert not gasto.compartido
+
+
+async def _guardar_un_gasto(m: Mundo, update_id: int = 1) -> str:
+    pid = await m.foto(update_id)
+    await m.toque(f"c:{pid}:s")
+    await m.toque(f"g:{pid}")
+    return pid
+
+
+async def test_total_de_la_quincena_en_curso() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.total(telegram_id=MARCELO, chat_id=MARCELO)
+    texto = m.tg.enviados[-1]["texto"]
+    assert "primera quincena en curso (1 al 15, al 10)" in texto
+    assert "Llevan gastados U$S 31,26 en 1 movimiento." in texto
+    assert "• Supermercado: U$S 31,26" in texto
+    assert "El mes hasta acá" in texto
+
+
+async def test_cuanto_llevamos_es_lo_mismo_que_total() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.texto("¿cuánto llevamos?")
+    assert "Llevan gastados U$S 31,26" in m.tg.enviados[-1]["texto"]
+    assert m.extractor.llamadas == [m.extractor.llamadas[0]]  # no se llamó al LLM por la pregunta
+
+
+async def test_total_sin_tipo_de_cambio_avisa() -> None:
+    m = Mundo(con_tc=False)
+    await m.flujo.total(telegram_id=MARCELO, chat_id=MARCELO)
+    assert "tipo de cambio" in m.tg.enviados[-1]["texto"]
+
+
+async def test_ultimos_lista_con_id_y_como_corregir() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.ultimos(telegram_id=MARCELO, chat_id=MARCELO)
+    texto = m.tg.enviados[-1]["texto"]
+    assert "Últimos 1 gastos:" in texto
+    assert "G-260910-001 · 03/09 · Disco · $ 1.250,50 · Supermercado (Marcelo)" in texto
+    assert "/editar" in texto and "/borrar" in texto
+
+
+async def test_ultimos_sin_nada_registrado() -> None:
+    m = Mundo()
+    await m.flujo.ultimos(telegram_id=MARCELO, chat_id=MARCELO)
+    assert m.tg.enviados[-1]["texto"] == msg.SIN_GASTOS
