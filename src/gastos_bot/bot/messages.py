@@ -70,6 +70,11 @@ BORRAR_CONFIRMAR = (
 )
 BORRADO = "🗑️ Borré {id}. Queda en el Sheet como eliminado y ya no cuenta en el Dashboard."
 BORRAR_CANCELADO = "Listo, no toqué nada."
+POSIBLE_DUPLICADO = (
+    "⚠️ Esto se parece a algo que ya está guardado:\n\n{resumen}\n\n"
+    "Si es el mismo gasto, descartalo. Si de verdad gastaste dos veces, guardalo igual."
+)
+TOAST_DUPLICADO = "Fijate: parece repetido."
 EDITANDO = "✏️ Editando {id}"
 EDITADO = "✏️ Actualicé {id}\n{resumen}"
 SIN_GASTOS = "Todavía no hay gastos registrados. Mandame una foto o escribime «450 uyu farmacia»."

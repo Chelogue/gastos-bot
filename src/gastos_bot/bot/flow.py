@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
 
@@ -18,6 +18,7 @@ from gastos_bot.bot import messages as msg
 from gastos_bot.domain import ids, naming
 from gastos_bot.domain.categorias import Rubro
 from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos
+from gastos_bot.domain.duplicados import buscar_duplicado
 from gastos_bot.domain.fx import a_usd
 from gastos_bot.domain.ids import mes_de_id
 from gastos_bot.domain.models import (
@@ -503,6 +504,11 @@ class Flujo:
                     que = "compartido/personal" if p.compartido is None else "moneda y categoría"
                     return msg.TOAST_FALTA.format(que=que)
                 return await self._confirmar(p, persona, chat_id)
+            case kb.Accion.GUARDAR_IGUAL:
+                if not p.listo_para_guardar:
+                    await self._mostrar_resumen(p, chat_id)
+                    return None
+                return await self._confirmar(p, persona, chat_id, forzar=True)
         return None
 
     async def _pedir(self, p: Pendiente, chat_id: int, campo: CampoEsperado) -> None:
@@ -555,7 +561,9 @@ class Flujo:
 
     # ---------- confirmar (R4, R5, R16) ----------
 
-    async def _confirmar(self, p: Pendiente, persona: Persona, chat_id: int) -> str | None:
+    async def _confirmar(
+        self, p: Pendiente, persona: Persona, chat_id: int, forzar: bool = False
+    ) -> str | None:
         assert p.monto is not None and p.moneda is not None and p.subcategoria is not None
         if p.gasto_id:  # la tarjeta salió de /editar: no hay alta ni subida a Drive (R13)
             return await self._guardar_edicion(p, chat_id)
@@ -567,6 +575,16 @@ class Flujo:
         if tc is None:
             await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
             return msg.TC_FALTANTE.format(mes=mes)[:200]
+        if not forzar and (duplicado := await self._duplicado_de(p, mes, envio_local.date())):
+            log.info("posible_duplicado", gasto_id=duplicado.id)
+            await self.st.pendientes.guardar(p)
+            await self.tg.editar(
+                chat_id,
+                p.mensaje_tarjeta_id or 0,
+                msg.POSIBLE_DUPLICADO.format(resumen=msg.gasto_linea(duplicado)),
+                kb.confirmar_duplicado(p.pendiente_id),
+            )
+            return msg.TOAST_DUPLICADO
         catalogo = await self.st.categorias.catalogo()
         rubro = catalogo.rubro_de(p.subcategoria)
         e = p.extraccion
@@ -624,6 +642,21 @@ class Flujo:
         await self.tg.editar(chat_id, p.mensaje_tarjeta_id or 0, texto)
         log.info("gasto_guardado", gasto_id=gasto.id, mes=mes)
         return msg.TOAST_OK
+
+    async def _duplicado_de(self, p: Pendiente, mes: str, hoy: date) -> Gasto | None:
+        """Busca un gasto parecido ya guardado (R20). Si Sheets falla, no bloquea el alta."""
+        assert p.monto is not None and p.moneda is not None
+        try:
+            del_mes = await self.st.gastos.listar_mes(mes)
+        except StorageError:
+            return None
+        return buscar_duplicado(
+            fecha=p.fecha or hoy,
+            monto=p.monto,
+            moneda=p.moneda,
+            comercio=p.extraccion.comercio,
+            gastos=del_mes,
+        )
 
     def _armar_gasto(
         self,

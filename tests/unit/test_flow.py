@@ -299,7 +299,8 @@ async def test_colision_de_nombre_y_reembolso() -> None:
         pid = await m.foto(update_id=i)
         await m.toque(f"c:{pid}:s")
         m.tg.enviados = m.tg.enviados[-1:]  # el toque usa el primer enviado
-        await m.toque(f"g:{pid}")
+        if await m.toque(f"g:{pid}") == msg.TOAST_DUPLICADO:
+            await m.toque(f"gi:{pid}")  # el segundo es igual al primero (R20)
     nombres = sorted(n for _, n, _ in m.drive.archivos.values())
     assert nombres == [
         "2026-09-10_Disco_1250.5-UYU_Marcelo-2.jpg",
@@ -492,3 +493,52 @@ async def test_editar_un_gasto_borrado_o_inexistente() -> None:
     await m.toque("bs:G-260910-001")
     await m.flujo.editar(update_id=8, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
     assert m.tg.enviados[-1]["texto"] == msg.GASTO_YA_BORRADO.format(id="G-260910-001")
+
+
+async def test_duplicado_avisa_antes_de_guardar_y_se_puede_descartar() -> None:
+    m = Mundo(_extraccion(), _extraccion())
+    pid1 = await m.foto(update_id=1)
+    await m.toque(f"c:{pid1}:s")
+    await m.toque(f"g:{pid1}")
+    assert len(m.gastos.filas["2026-09"]) == 1
+
+    m.tg.enviados = m.tg.enviados[-1:]
+    pid2 = await m.foto(update_id=2)
+    await m.toque(f"c:{pid2}:s")
+    assert await m.toque(f"g:{pid2}") == msg.TOAST_DUPLICADO
+    assert "se parece a algo que ya está guardado" in m.tg.editados[-1]["texto"]
+    assert "G-260910-001" in m.tg.editados[-1]["texto"]
+    assert [b.data for f in m.tg.editados[-1]["teclado"] for b in f] == [
+        f"gi:{pid2}",
+        f"d:{pid2}",
+    ]
+    assert len(m.gastos.filas["2026-09"]) == 1  # todavía no se guardó
+
+    await m.toque(f"d:{pid2}")
+    assert len(m.gastos.filas["2026-09"]) == 1
+    assert m.pendientes.pendientes[pid2].estado is EstadoPendiente.DESCARTADO
+
+
+async def test_duplicado_se_puede_guardar_igual() -> None:
+    m = Mundo(_extraccion(), _extraccion())
+    pid1 = await m.foto(update_id=1)
+    await m.toque(f"c:{pid1}:s")
+    await m.toque(f"g:{pid1}")
+    m.tg.enviados = m.tg.enviados[-1:]
+    pid2 = await m.foto(update_id=2)
+    await m.toque(f"c:{pid2}:s")
+    await m.toque(f"g:{pid2}")
+    assert await m.toque(f"gi:{pid2}") == msg.TOAST_OK
+    assert [g.id for g in m.gastos.filas["2026-09"]] == ["G-260910-001", "G-260910-002"]
+
+
+async def test_un_gasto_distinto_no_dispara_el_aviso() -> None:
+    m = Mundo(_extraccion(), _extraccion(monto=Decimal("300"), comercio="Farmacia"))
+    pid1 = await m.foto(update_id=1)
+    await m.toque(f"c:{pid1}:s")
+    await m.toque(f"g:{pid1}")
+    m.tg.enviados = m.tg.enviados[-1:]
+    pid2 = await m.foto(update_id=2)
+    await m.toque(f"c:{pid2}:s")
+    assert await m.toque(f"g:{pid2}") == msg.TOAST_OK
+    assert len(m.gastos.filas["2026-09"]) == 2

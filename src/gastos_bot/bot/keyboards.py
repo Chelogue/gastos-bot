@@ -29,6 +29,7 @@ class Accion(StrEnum):
     VOLVER = "v"
     BORRAR_SI = "bs"  # el "pendiente_id" es el ID del gasto (R13)
     BORRAR_NO = "bn"
+    GUARDAR_IGUAL = "gi"  # guardar aunque parezca duplicado (R20)
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,15 @@ def monedas(pid: str) -> Teclado:
             _b("U$S Dólares", Accion.ELEGIR_MONEDA, pid, "USD"),
         ],
         [_b("↩️ Volver", Accion.VOLVER, pid)],
+    ]
+
+
+def confirmar_duplicado(pid: str) -> Teclado:
+    return [
+        [
+            _b("✅ Guardar igual", Accion.GUARDAR_IGUAL, pid),
+            _b("❌ Descartar", Accion.DESCARTAR, pid),
+        ]
     ]
 
 
