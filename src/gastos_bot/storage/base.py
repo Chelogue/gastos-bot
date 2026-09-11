@@ -10,11 +10,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Protocol
 
 from gastos_bot.domain.categorias import Catalogo
 from gastos_bot.domain.indicador import Indicador
-from gastos_bot.domain.models import Config, Gasto, Pendiente
+from gastos_bot.domain.models import Config, Gasto, Pendiente, TipoCambio
 
 
 class StorageError(Exception):
@@ -26,6 +27,10 @@ class ConfigRepo(Protocol):
 
     async def guardar_carpeta(self, ruta: str, folder_id: str) -> None:
         """Cachea el ID de una carpeta de Drive en Config (tipo ``carpeta``)."""
+        ...
+
+    async def guardar_tc(self, tc: TipoCambio, nota: str = "") -> None:
+        """Fija el tipo de cambio del mes en Config (R7). Reemplaza la fila si ya existía."""
         ...
 
 
@@ -41,6 +46,13 @@ class GastosRepo(Protocol):
         ...
 
     async def listar_mes(self, mes: str) -> list[Gasto]: ...
+
+    async def reconvertir_mes(self, mes: str, tc: Decimal) -> int:
+        """Reescribe ``tc_mes`` y ``monto_usd`` de la pestaña del mes con ese TC (R7).
+
+        Devuelve cuántas filas cambiaron. Se usa cuando el TC se fija tarde o se edita a mano.
+        """
+        ...
 
 
 class PendientesRepo(Protocol):
