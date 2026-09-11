@@ -16,8 +16,14 @@ Bot de Telegram para que dos personas registren gastos con una foto, los archive
 | Texto, «450 uyu farmacia» | Misma tarjeta, sin imagen (R11) |
 | `/total` o «cuánto llevamos» | Cómo viene la quincena: por persona, por categoría, por moneda y contra los topes 50/30/20 |
 | `/ultimos` | Los últimos 10 gastos con su ID |
+| `/reporte`, `/reporte anterior`, `/reporte mes` | El mismo reporte a demanda: quincena en curso, la anterior o el mes entero |
+| `/dashboard` | Los últimos meses resumidos: rubros contra sus topes, tasa de ahorro e inversión |
 | `/editar G-260910-001` | Reabre la tarjeta y reescribe esa fila (no toca la foto) |
+| `/repetir G-260910-001` | Copia ese gasto con la fecha de hoy: alquiler, suscripciones |
 | `/borrar G-260910-001` | La marca como eliminada, con confirmación; la fila y la foto quedan |
+
+Si un gasto se parece a otro ya guardado (mismo monto, menos de tres días, comercio parecido), el
+bot avisa antes de guardar y te deja decidir.
 
 Los días 1 y 16 a las 09:00 llega el reporte quincenal, y el día 1 a las 00:05 se fija el tipo de
 cambio del mes. El menú de comandos de Telegram se registra con

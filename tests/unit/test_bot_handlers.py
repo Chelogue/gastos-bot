@@ -193,3 +193,24 @@ def test_borrar_un_gasto_de_punta_a_punta(client: TestClient, fake_bot: FakeBot)
     assert "¿Borro este gasto?" in fake_bot.sent[-1]["text"]
     _post(client, toque(6, f"bs:{gasto_id}", 9))
     assert f"Borré {gasto_id}" in fake_bot.edited[-1]["text"]
+
+
+def test_dashboard_reporte_y_repetir(client: TestClient, fake_bot: FakeBot) -> None:
+    _post(client, _comando(1, "/dashboard"))
+    assert fake_bot.sent[-1]["text"] == msg.SIN_DASHBOARD
+    _post(client, _comando(2, "/reporte mes"))
+    assert "el mes" in fake_bot.sent[-1]["text"]
+    _post(client, _comando(3, "/repetir"))
+    assert fake_bot.sent[-1]["text"] == msg.USO_REPETIR
+
+    _post(client, foto(4))
+    pid = fake_bot.sent[-1]["reply_markup"].inline_keyboard[0][0].callback_data.split(":")[1]
+    _post(client, toque(5, f"c:{pid}:s", 2))
+    _post(client, toque(6, f"g:{pid}", 2))
+    _post(client, _comando(7, "/ultimos"))
+    gasto_id = fake_bot.sent[-1]["text"].split("• ")[1].split(" ·")[0]
+
+    _post(client, _comando(8, f"/repetir {gasto_id}"))
+    assert f"🔁 Repetido de {gasto_id}" in fake_bot.sent[-1]["text"]
+    _post(client, _comando(9, "/dashboard"))
+    assert "📈 Dashboard" in fake_bot.sent[-1]["text"]
