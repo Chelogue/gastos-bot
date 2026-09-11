@@ -286,11 +286,13 @@ def reporte(r: Reporte) -> str:
         _linea_rubro(
             "Deseos", ind.deseos.gastado_usd, ind.deseos.tope_usd, ind.deseos.pct_del_tope
         ),
-        f"• Ahorro del mes: {usd(ind.ahorro_residual_usd)}, {pct(ind.ahorro_pct)} del ingreso",
+        f"• Sin gastar: {usd(ind.ahorro_residual_usd)} ({pct(ind.ahorro_pct)} del ingreso)",
+        f"• Objetivo del mes: {usd(ind.ahorro_declarado_usd)} de {usd(ind.ahorro_tope_usd)}"
+        f" ({pct(ind.ejecutado_pct)}) {ind.ejecucion}",
     ]
     if ind.ahorro_por_subcategoria:
         detalle = " · ".join(f"{sub} {usd(monto)}" for sub, monto in ind.ahorro_por_subcategoria)
-        lineas.append(f"• De eso, ya apartado: {detalle}")
+        lineas.append(f"• Ya apartado: {detalle}")
     if r.link_sheet:
         lineas += ["", f"📄 El Sheet: {r.link_sheet}"]
     if r.link_carpeta:
@@ -329,13 +331,18 @@ def dashboard(meses: Sequence[ResumenMes], link_sheet: str | None = None) -> str
             f"• Necesidades {usd(m.necesidades_usd)} ({pct(m.necesidades_pct)}) · "
             f"Deseos {usd(m.deseos_usd)} ({pct(m.deseos_pct)})"
         )
-        apartado = [f"Ahorro {pct(m.ahorro_pct)} del ingreso"]
+        ejecutado = m.ahorro_registrado_usd + m.inversion_usd
+        objetivo = (
+            f"• Objetivo {usd(m.ahorro_objetivo_usd)} · ejecutado {usd(ejecutado)}"
+            f" ({pct(m.ejecutado_pct)}) {m.ejecucion}"
+        )
         if m.inversion_usd:
-            apartado.append(f"invertido {usd(m.inversion_usd)}")
-        if m.ahorro_registrado_usd:
-            apartado.append(f"guardado {usd(m.ahorro_registrado_usd)}")
+            objetivo += f", en portafolio {usd(m.inversion_usd)}"
         movimientos = "movimiento" if m.n_registros == 1 else "movimientos"
-        lineas.append(f"• {' · '.join(apartado)} · {m.n_registros} {movimientos}")
+        lineas.append(objetivo)
+        lineas.append(
+            f"• Sin gastar {pct(m.ahorro_pct)} del ingreso · {m.n_registros} {movimientos}"
+        )
         lineas.append("")
     if link_sheet:
         lineas.append(f"📄 La tabla completa: {link_sheet}")

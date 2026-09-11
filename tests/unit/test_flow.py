@@ -580,7 +580,8 @@ async def test_dashboard_resume_los_meses_en_el_chat() -> None:
     assert texto.startswith("📈 Dashboard · mes")
     assert "Setiembre ✅" in texto
     assert "• Necesidades U$S 31,26 (0 %) · Deseos U$S 0,00 (0 %)" in texto
-    assert "• Ahorro 100 % del ingreso · 1 movimiento" in texto
+    assert "• Objetivo U$S 1.270,00 · ejecutado U$S 0,00 (0 %) 🟡" in texto
+    assert "• Sin gastar 100 % del ingreso · 1 movimiento" in texto
     assert "📄 La tabla completa: https://docs.google.com/spreadsheets/d/hoja123" in texto
 
 
