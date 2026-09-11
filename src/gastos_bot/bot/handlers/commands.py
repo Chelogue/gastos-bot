@@ -36,3 +36,19 @@ async def ultimos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message is None or user is None:
         return
     await flujo_de(context).ultimos(telegram_id=user.id, chat_id=message.chat_id)
+
+
+def _id_del_comando(context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    args = getattr(context, "args", None) or []
+    return args[0] if args else None
+
+
+async def borrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, user = update.effective_message, update.effective_user
+    if message is None or user is None:
+        return
+    gasto_id = _id_del_comando(context)
+    if gasto_id is None:
+        await message.reply_text(messages.USO_BORRAR)
+        return
+    await flujo_de(context).borrar(telegram_id=user.id, chat_id=message.chat_id, gasto_id=gasto_id)

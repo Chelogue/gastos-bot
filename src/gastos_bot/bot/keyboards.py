@@ -27,6 +27,8 @@ class Accion(StrEnum):
     ELEGIR_MONEDA = "mc"  # valor UYU | USD
     DESCARTAR = "d"
     VOLVER = "v"
+    BORRAR_SI = "bs"  # el "pendiente_id" es el ID del gasto (R13)
+    BORRAR_NO = "bn"
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,16 @@ def monedas(pid: str) -> Teclado:
             _b("U$S Dólares", Accion.ELEGIR_MONEDA, pid, "USD"),
         ],
         [_b("↩️ Volver", Accion.VOLVER, pid)],
+    ]
+
+
+def confirmar_borrado(gasto_id: str) -> Teclado:
+    """El ID del gasto viaja en el lugar del pendiente_id: entra de sobra en 64 bytes."""
+    return [
+        [
+            _b("🗑️ Sí, borrar", Accion.BORRAR_SI, gasto_id),
+            _b("↩️ No", Accion.BORRAR_NO, gasto_id),
+        ]
     ]
 
 

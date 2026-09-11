@@ -19,6 +19,7 @@ from gastos_bot.domain import ids, naming
 from gastos_bot.domain.categorias import Rubro
 from gastos_bot.domain.consultas import es_consulta_total, es_consulta_ultimos
 from gastos_bot.domain.fx import a_usd
+from gastos_bot.domain.ids import mes_de_id
 from gastos_bot.domain.models import (
     CampoEsperado,
     Estado,
@@ -254,6 +255,75 @@ class Flujo:
                 return
             await self.tg.enviar(chat_id, msg.ultimos(gastos[-cuantos:]))
 
+    # ---------- corregir y borrar (R13) ----------
+
+    async def borrar(self, *, telegram_id: int, chat_id: int, gasto_id: str) -> None:
+        """Pide confirmación; borrar de verdad pasa por el botón (R13)."""
+        with bind_context(telegram_id=telegram_id, gasto_id=gasto_id):
+            if await self._persona(telegram_id, chat_id) is None:
+                return
+            gasto = await self._buscar_gasto(gasto_id, chat_id)
+            if gasto is None:
+                return
+            if gasto.estado is Estado.ELIMINADO:
+                await self.tg.enviar(chat_id, msg.GASTO_YA_BORRADO.format(id=gasto.id))
+                return
+            await self.tg.enviar(
+                chat_id,
+                msg.BORRAR_CONFIRMAR.format(resumen=msg.gasto_linea(gasto)),
+                kb.confirmar_borrado(gasto.id),
+            )
+
+    async def _buscar_gasto(self, gasto_id: str, chat_id: int) -> Gasto | None:
+        limpio = gasto_id.strip().upper()
+        try:
+            gasto = await self.st.gastos.obtener(limpio)
+        except StorageError as exc:
+            await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+            return None
+        if gasto is None:
+            await self.tg.enviar(chat_id, msg.GASTO_NO_ENCONTRADO.format(id=limpio))
+        return gasto
+
+    async def _resolver_borrado(self, cb: kb.Callback, chat_id: int, message_id: int) -> str | None:
+        gasto_id = cb.pendiente_id
+        if cb.accion is kb.Accion.BORRAR_NO:
+            await self.tg.editar(chat_id, message_id, msg.BORRAR_CANCELADO)
+            return msg.BORRAR_CANCELADO
+        gasto = await self._buscar_gasto(gasto_id, chat_id)
+        if gasto is None:
+            return None
+        if gasto.estado is Estado.ELIMINADO:
+            await self.tg.editar(chat_id, message_id, msg.GASTO_YA_BORRADO.format(id=gasto.id))
+            return None
+        ahora_local = a_local(self.reloj(), self.zona)
+        try:
+            await self.st.gastos.actualizar(
+                gasto.model_copy(
+                    update={"estado": Estado.ELIMINADO, "fecha_modificacion": ahora_local}
+                )
+            )
+        except StorageError as exc:
+            await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+            return None
+        log.info("gasto_borrado", gasto_id=gasto.id)
+        await self.tg.editar(chat_id, message_id, msg.BORRADO.format(id=gasto.id))
+        await self._recalcular_del_gasto(gasto.id)
+        return msg.TOAST_OK
+
+    async def _recalcular_del_gasto(self, gasto_id: str) -> None:
+        """Deja el Dashboard al día después de editar o borrar una fila (R10, R13)."""
+        mes = mes_de_id(gasto_id)
+        if mes is None:
+            return
+        try:
+            config = await self.st.config.cargar()
+        except StorageError:
+            return
+        tc = config.tc_del_mes(mes)
+        if tc is not None:
+            await self._recalcular_dashboard(mes, config, tc.valor)
+
     async def procesar_callback(
         self, *, telegram_id: int, chat_id: int, message_id: int, data: str
     ) -> str | None:
@@ -265,6 +335,8 @@ class Flujo:
             persona = await self._persona(telegram_id, chat_id)
             if persona is None:
                 return None
+            if cb.accion in (kb.Accion.BORRAR_SI, kb.Accion.BORRAR_NO):
+                return await self._resolver_borrado(cb, chat_id, message_id)
             p = await self.st.pendientes.obtener(cb.pendiente_id)
             if p is None or p.telegram_id != telegram_id or p.estado is not EstadoPendiente.ABIERTO:
                 await self.tg.editar(chat_id, message_id, msg.EXPIRADO)

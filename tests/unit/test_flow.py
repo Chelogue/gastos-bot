@@ -9,6 +9,7 @@ from gastos_bot.bot import messages as msg
 from gastos_bot.bot.flow import Flujo
 from gastos_bot.domain.models import (
     Config,
+    Estado,
     EstadoPendiente,
     Extraccion,
     Ingreso,
@@ -391,3 +392,47 @@ async def test_ultimos_sin_nada_registrado() -> None:
     m = Mundo()
     await m.flujo.ultimos(telegram_id=MARCELO, chat_id=MARCELO)
     assert m.tg.enviados[-1]["texto"] == msg.SIN_GASTOS
+
+
+async def test_borrar_pide_confirmacion_y_marca_eliminado() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    recalculos = len(m.dashboard.recalculos)
+
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="g-260910-001")
+    assert "¿Borro este gasto?" in m.tg.enviados[-1]["texto"]
+    teclado = m.tg.enviados[-1]["teclado"]
+    assert [b.data for fila in teclado for b in fila] == ["bs:G-260910-001", "bn:G-260910-001"]
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.estado is Estado.ACTIVO  # todavía no
+
+    assert await m.toque("bs:G-260910-001") == msg.TOAST_OK
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.estado is Estado.ELIMINADO and gasto.fecha_modificacion is not None
+    assert "Borré G-260910-001" in m.tg.editados[-1]["texto"]
+    assert len(m.dashboard.recalculos) == recalculos + 1
+    assert m.dashboard.recalculos[-1].n_registros == 0  # ya no cuenta
+
+
+async def test_borrar_cancelado_no_toca_nada() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    assert await m.toque("bn:G-260910-001") == msg.BORRAR_CANCELADO
+    (gasto,) = m.gastos.filas["2026-09"]
+    assert gasto.estado is Estado.ACTIVO
+
+
+async def test_borrar_un_id_que_no_existe() -> None:
+    m = Mundo()
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-009")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_NO_ENCONTRADO.format(id="G-260910-009")
+
+
+async def test_borrar_dos_veces_avisa() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    await m.toque("bs:G-260910-001")
+    await m.flujo.borrar(telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-001")
+    assert m.tg.enviados[-1]["texto"] == msg.GASTO_YA_BORRADO.format(id="G-260910-001")

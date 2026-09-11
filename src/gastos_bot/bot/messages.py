@@ -58,6 +58,16 @@ FX_SIN_DATO = (
     "No pude fijar el tipo de cambio de {mes} ({motivo}) y no tengo uno anterior para reusar.\n"
     "Cargalo a mano en la pestaña Config (fila tipo «tc»): sin eso no puedo guardar gastos."
 )
+USO_BORRAR = "Usá /borrar <ID>, por ejemplo /borrar G-260910-001. Los IDs salen de /ultimos."
+USO_EDITAR = "Usá /editar <ID>, por ejemplo /editar G-260910-001. Los IDs salen de /ultimos."
+GASTO_NO_ENCONTRADO = "No encontré el gasto {id}. Mirá el ID con /ultimos."
+GASTO_YA_BORRADO = "{id} ya estaba borrado."
+BORRAR_CONFIRMAR = (
+    "¿Borro este gasto?\n\n{resumen}\n\n"
+    "No se borra la foto ni la fila: queda marcada como eliminada y deja de contar."
+)
+BORRADO = "🗑️ Borré {id}. Queda en el Sheet como eliminado y ya no cuenta en el Dashboard."
+BORRAR_CANCELADO = "Listo, no toqué nada."
 SIN_GASTOS = "Todavía no hay gastos registrados. Mandame una foto o escribime «450 uyu farmacia»."
 REPORTE_SIN_TC = (
     "Tenía que mandarles el reporte de {mes}, pero falta el tipo de cambio del mes en la pestaña "
@@ -264,11 +274,15 @@ def ultimos(gastos: Sequence[Gasto]) -> str:
     if not gastos:
         return SIN_GASTOS
     lineas = [f"Últimos {len(gastos)} gastos:"]
-    for g in gastos:
-        lineas.append(
-            f"• {g.id} · {g.fecha_gasto:%d/%m} · {g.comercio or 'sin comercio'} · "
-            f"{monto_fmt(g.monto, g.moneda)} · {g.subcategoria} ({g.quien_subio})"
-        )
+    lineas += [f"• {gasto_linea(g)}" for g in gastos]
     lineas.append("")
     lineas.append("Para corregir: /editar <ID>. Para borrar: /borrar <ID>.")
     return "\n".join(lineas)
+
+
+def gasto_linea(g: Gasto) -> str:
+    """Una línea con lo esencial de un gasto guardado, para confirmar o listar."""
+    return (
+        f"{g.id} · {g.fecha_gasto:%d/%m} · {g.comercio or 'sin comercio'} · "
+        f"{monto_fmt(g.monto, g.moneda)} · {g.subcategoria} ({g.quien_subio})"
+    )
