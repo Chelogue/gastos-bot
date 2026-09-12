@@ -13,8 +13,11 @@ def test_columnas_unicas_y_sin_espacios() -> None:
 def test_columnas_del_prd() -> None:
     assert len(s.MES_COLUMNAS) == 20
     assert s.MES_COLUMNAS[0] == "id" and s.MES_COLUMNAS[-1] == "fecha_modificacion"
-    assert len(s.DASHBOARD_COLUMNAS) == 20  # las 19 del PRD + inversion_usd (ADR 0008)
-    assert "inversion_usd" in s.DASHBOARD_COLUMNAS
+    # las 19 del PRD + inversion_usd (ADR 0008) + objetivo, ejecutado y ejecución (ADR 0010)
+    assert len(s.DASHBOARD_COLUMNAS) == 23
+    assert {"inversion_usd", "ahorro_objetivo_usd", "ejecutado_pct", "ejecucion"} <= set(
+        s.DASHBOARD_COLUMNAS
+    )
     assert s.DASHBOARD_COLUMNAS[0] == "mes" and s.DASHBOARD_COLUMNAS[-1] == "cumplimiento"
     assert s.PENDIENTES_COLUMNAS == (
         "pendiente_id", "update_id", "telegram_id", "json_extraccion", "file_id", "creado", "expira"

@@ -4,7 +4,11 @@ from datetime import date
 
 from gastos_bot.storage import sheet_estilo as estilo
 from gastos_bot.storage import sheet_schema as schema
-from gastos_bot.storage.sheet_setup import asegurar_estructura, asegurar_pestana_mes
+from gastos_bot.storage.sheet_setup import (
+    asegurar_estructura,
+    asegurar_movimientos,
+    asegurar_pestana_mes,
+)
 from tests.fakes import FakeSpreadsheet
 
 HOY = date(2026, 9, 10)
@@ -18,8 +22,22 @@ def _titulos(sh: FakeSpreadsheet) -> list[str]:
 def test_crea_todo_desde_cero_en_el_orden_del_prd() -> None:
     sh = FakeSpreadsheet()
     r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
-    assert _titulos(sh) == ["Dashboard", "2026-09", "Config", "Categorias", "Pendientes"]
-    assert set(r.creadas) == {"Dashboard", "2026-09", "Config", "Categorias", "Pendientes"}
+    assert _titulos(sh) == [
+        "Dashboard",
+        "2026-09",
+        "Movimientos",
+        "Config",
+        "Categorias",
+        "Pendientes",
+    ]
+    assert set(r.creadas) == {
+        "Dashboard",
+        "2026-09",
+        "Movimientos",
+        "Config",
+        "Categorias",
+        "Pendientes",
+    }
     ocultas = {ws.title for ws in sh.worksheets() if ws.isSheetHidden}
     assert ocultas == {"Config", "Categorias", "Pendientes"}
     por_titulo = {ws.title: ws for ws in sh.worksheets()}
@@ -52,7 +70,14 @@ def test_segunda_corrida_no_cambia_nada() -> None:
     asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     assert r.sin_cambios and r.avisos == []
-    assert _titulos(sh) == ["Dashboard", "2026-09", "Config", "Categorias", "Pendientes"]
+    assert _titulos(sh) == [
+        "Dashboard",
+        "2026-09",
+        "Movimientos",
+        "Config",
+        "Categorias",
+        "Pendientes",
+    ]
     # la segunda corrida solo reaplica diseño (idempotente): ni orden, ni gráficos, ni bandas nuevas
     ultimos = sh.batch_calls[-1]["requests"]
     assert not any("addChart" in q or "addBanding" in q for q in ultimos)
@@ -176,3 +201,34 @@ def test_forzar_encabezados_migra_una_fila_1_vieja() -> None:
     migrado = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY, forzar_encabezados=True)
     assert migrado.avisos == []
     assert dashboard.row_values(1) == list(estilo.etiquetas("Dashboard", schema.DASHBOARD_COLUMNAS))
+
+
+def test_movimientos_apila_todas_las_pestanas_de_mes() -> None:
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    ws = next(w for w in sh.worksheets() if w.title == "Movimientos")
+    assert ws.row_values(1) == list(estilo.etiquetas("2026-09", schema.MES_COLUMNAS))
+    assert ws.get_all_values()[1][0] == schema.formula_movimientos(["2026-09"])
+
+    asegurar_pestana_mes(sh, "2026-10")  # al abrir un mes nuevo se reescribe sola
+    assert ws.get_all_values()[1][0] == schema.formula_movimientos(["2026-09", "2026-10"])
+    assert "'2026-10'!A2:T" in ws.get_all_values()[1][0]
+
+
+def test_la_formula_de_movimientos_cae_al_otro_separador() -> None:
+    """Si el Sheet está en un idioma con coma decimal, la coma no sirve como separador."""
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    ws = next(w for w in sh.worksheets() if w.title == "Movimientos")
+    original = ws.update
+
+    def rechaza_la_coma(values: list[list[object]], range_name: str = "A1", **kw: object) -> None:
+        primera = str(values[0][0]) if values and values[0] else ""
+        if primera.startswith("=") and '},"' in primera:
+            original([["#ERROR!"]], range_name, **kw)
+            return
+        original(values, range_name, **kw)
+
+    ws.update = rechaza_la_coma  # type: ignore[method-assign]
+    asegurar_movimientos(sh)
+    assert ws.get_all_values()[1][0] == schema.formula_movimientos(["2026-09"], ";")

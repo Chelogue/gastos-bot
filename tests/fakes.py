@@ -428,10 +428,13 @@ class FakeDashboardRepo:
                 deseos_usd=i.deseos.gastado_usd,
                 deseos_pct=i.deseos.pct_ingreso,
                 ahorro_pct=i.ahorro_pct,
+                ahorro_objetivo_usd=i.ahorro_tope_usd,
                 ahorro_registrado_usd=i.ahorro_registrado_usd,
                 inversion_usd=i.inversion_usd,
+                ejecutado_pct=i.ejecutado_pct,
                 n_registros=i.n_registros,
                 cumplimiento=i.cumplimiento.value,
+                ejecucion=i.ejecucion.value,
             )
             for i in sorted(por_mes.values(), key=lambda x: x.mes)
         ]

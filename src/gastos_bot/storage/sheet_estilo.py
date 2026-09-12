@@ -39,8 +39,11 @@ ETIQUETAS_DASHBOARD: dict[str, str] = {
     "deseos_tope_usd": "Tope deseos",
     "ahorro_residual_usd": "Ahorro residual (USD)",
     "ahorro_pct": "Tasa de ahorro",
+    "ahorro_objetivo_usd": "Objetivo 20 % (USD)",
     "ahorro_registrado_usd": "Ahorro registrado (USD)",
-    "inversion_usd": "Inversión (USD)",
+    "inversion_usd": "Inversión ejecutada (USD)",
+    "ejecutado_pct": "Ejecutado vs objetivo",
+    "ejecucion": "Ejecución",
     "marcelo_usd": "Marcelo (USD)",
     "nikole_usd": "Nikole (USD)",
     "compartido_usd": "Compartido (USD)",
@@ -100,13 +103,14 @@ ETIQUETAS_POR_TAB: dict[str, dict[str, str]] = {
 
 def etiquetas(titulo: str, columnas: tuple[str, ...]) -> tuple[str, ...]:
     """Encabezado visible para una pestaña: etiqueta si existe, si no la clave técnica."""
-    mapa = ETIQUETAS_MES if schema.es_pestana_de_mes(titulo) else ETIQUETAS_POR_TAB.get(titulo, {})
+    como_mes = schema.es_pestana_de_mes(titulo) or titulo == schema.TAB_MOVIMIENTOS
+    mapa = ETIQUETAS_MES if como_mes else ETIQUETAS_POR_TAB.get(titulo, {})
     return tuple(mapa.get(c, c) for c in columnas)
 
 
 # ---------- anchos (px) ----------
 
-ANCHOS_DASHBOARD = {"mes": 80, "cumplimiento": 110}
+ANCHOS_DASHBOARD = {"mes": 80, "cumplimiento": 110, "ejecucion": 100}
 ANCHO_DASHBOARD_DEFECTO = 118
 ANCHOS_MES = {
     "id": 110,
