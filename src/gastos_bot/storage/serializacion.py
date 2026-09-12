@@ -36,12 +36,23 @@ def _bool(valor: str) -> bool:
 
 
 def _decimal(valor: str | float | int) -> Decimal:
+    """Número escrito en cualquiera de los dos formatos que devuelve o acepta el Sheet.
+
+    «1.250,50» (rioplatense) y «1,167.50» (el idioma del Sheet es es_MX) valen los dos. Con un
+    solo separador seguido de tres cifras se asume separador de miles: la plata lleva dos
+    decimales, así que «1,520» es mil quinientos veinte y no uno con medio.
+    """
     if isinstance(valor, (int, float)):
         return Decimal(str(valor))
-    txt = valor.strip().replace("$", "").replace(" ", "")
-    # Formato rioplatense "1.250,50" → "1250.50"
-    if "," in txt and (txt.rfind(",") > txt.rfind(".")):
-        txt = txt.replace(".", "").replace(",", ".")
+    txt = valor.strip().replace("$", "").replace("\xa0", "").replace(" ", "")
+    punto, coma = txt.rfind("."), txt.rfind(",")
+    if punto >= 0 and coma >= 0:  # el último separador es el decimal, el otro es de miles
+        decimal, miles = (".", ",") if punto > coma else (",", ".")
+        txt = txt.replace(miles, "").replace(decimal, ".")
+    elif punto >= 0 or coma >= 0:
+        separador = "." if punto >= 0 else ","
+        cifras_a_la_derecha = len(txt) - max(punto, coma) - 1
+        txt = txt.replace(separador, "" if cifras_a_la_derecha == 3 else ".")
     try:
         return Decimal(txt)
     except InvalidOperation as exc:

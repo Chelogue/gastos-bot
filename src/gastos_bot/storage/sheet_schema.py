@@ -111,8 +111,10 @@ def formula_movimientos(meses: Sequence[str], separador: str = ",") -> str:
         return ""
     hasta = letra_columna(len(MES_COLUMNAS) - 1)
     partes = ";".join(f"'{mes}'!A2:{hasta}" for mes in sorted(meses))
+    estado = f"Col{MES_COLUMNAS.index('estado') + 1}"
+    donde = f"select * where Col1 is not null and {estado} = 'activo'"
     sep = separador
-    return f'=IFERROR(QUERY({{{partes}}}{sep}"select * where Col1 is not null"{sep}0){sep}"")'
+    return f'=IFERROR(QUERY({{{partes}}}{sep}"{donde}"{sep}0){sep}"")'
 
 
 SEPARADORES_FORMULA = (",", ";")

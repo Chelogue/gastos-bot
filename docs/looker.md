@@ -10,8 +10,9 @@ y anda bien en el celular. Se arma una sola vez y después se actualiza solo.
 | Detalle | `Movimientos` | Todo gasto de todo mes, en vivo (ADR 0011). Filtros por persona, rubro, categoría y fecha |
 | Mensual | `Dashboard` | Una fila por mes: topes, objetivo de ahorro, ejecutado, cumplimiento |
 
-`Movimientos` es una sola fórmula que apila las pestañas de mes. No hay que tocarla: cuando el bot
-abre el mes nuevo, la reescribe.
+`Movimientos` es una sola fórmula que apila las pestañas de mes y deja afuera los gastos borrados,
+así el tablero da lo mismo que el Dashboard. No hay que tocarla: cuando el bot abre el mes nuevo,
+la reescribe.
 
 ## Armarlo (10 minutos, una sola vez)
 

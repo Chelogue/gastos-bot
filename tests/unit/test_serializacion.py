@@ -1,6 +1,8 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
+
 from gastos_bot.domain.categorias import Rubro
 from gastos_bot.domain.indicador import Cumplimiento, calcular
 from gastos_bot.domain.models import (
@@ -18,6 +20,7 @@ from gastos_bot.domain.models import (
 )
 from gastos_bot.storage import sheet_schema as schema
 from gastos_bot.storage.serializacion import (
+    _decimal,
     fila_a_pendiente,
     fila_tc,
     filas_a_gastos,
@@ -174,3 +177,31 @@ def test_reconvertir_filas_con_el_mismo_tc_no_cambia_nada() -> None:
     fila = [str(v) for v in gasto_a_fila(_gasto())]
     bloque, cambios = reconvertir_filas([fila], Decimal("40.5"))
     assert cambios == 0 and bloque == [[40.5, 30.88]]
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("1.250,50", "1250.50"),  # rioplatense
+        ("1,167.50", "1167.50"),  # como lo devuelve un Sheet en es_MX o en_US
+        ("1,234,567.89", "1234567.89"),
+        ("12.345.678,90", "12345678.90"),
+        ("1,520", "1520"),  # un solo separador con tres cifras: miles, no decimales
+        ("1.520", "1520"),
+        ("0,50", "0.50"),
+        ("40.21", "40.21"),
+        ("-300", "-300"),
+        ("$ 1.133,70", "1133.70"),
+    ],
+)
+def test_numeros_en_los_dos_formatos(texto: str, esperado: str) -> None:
+    assert _decimal(texto) == Decimal(esperado)
+
+
+def test_una_fila_con_miles_ya_no_se_pierde() -> None:
+    """Las filas de más de mil se caían de todas las cuentas (bug del 2026-09-12)."""
+    fila = [str(v) for v in gasto_a_fila(_gasto())]
+    fila[schema.MES_COLUMNAS.index("monto")] = "1,167.50"
+    fila[schema.MES_COLUMNAS.index("monto_usd")] = "1,520.00"
+    (g,) = filas_a_gastos([fila])
+    assert g.monto == Decimal("1167.50") and g.monto_usd == Decimal("1520")

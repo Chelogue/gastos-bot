@@ -11,7 +11,8 @@ Marcelo quiere el tablero en Looker Studio, así que hacía falta resolverlo.
 
 ## Decisión
 Una pestaña `Movimientos` cuya celda A2 es una sola fórmula que apila todas las pestañas de mes
-(`QUERY` sobre un literal `{…}`) y filtra las filas vacías. No hay copia de datos: lo que se ve es
+(`QUERY` sobre un literal `{…}`), filtra las filas vacías y deja afuera las eliminadas, para que
+el tablero dé exactamente lo mismo que el Dashboard. No hay copia de datos: lo que se ve es
 lo que hay en las pestañas, en vivo, sin importar si la fila la escribió el bot o una persona a
 mano. El bot reescribe esa fórmula cuando crea la pestaña de un mes nuevo, que es la única vez que
 cambia. El separador de argumentos depende del idioma del Sheet (el de Marcelo está en es_MX), así

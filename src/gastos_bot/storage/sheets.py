@@ -52,6 +52,18 @@ def _celda(fila: Sequence[Any], i: int) -> str:
     return str(fila[i]).strip() if i < len(fila) and fila[i] is not None else ""
 
 
+# Los números tienen que llegar como números: formateados, el Sheet devuelve «1,167.50» según su
+# idioma y cualquier parseo depende de eso. Las fechas sí las queremos como texto, para leerlas.
+CRUDO: dict[str, str] = {
+    "value_render_option": "UNFORMATTED_VALUE",
+    "date_time_render_option": "FORMATTED_STRING",
+}
+
+
+def _filas(ws: Any) -> list[list[Any]]:
+    return list(ws.get_all_values(**CRUDO))
+
+
 async def en_hilo[T](fn: Callable[[], T]) -> T:
     """Corre una llamada bloqueante de gspread fuera del event loop; traduce errores."""
     try:
@@ -184,7 +196,14 @@ class SheetsGastosRepo:
     async def listar_mes(self, mes: str) -> list[Gasto]:
         def leer() -> list[Gasto]:
             ws = self._c.hoja(mes)
-            return filas_a_gastos(ws.get_all_values()[1:]) if ws is not None else []
+            if ws is None:
+                return []
+            filas = _filas(ws)[1:]
+            gastos = filas_a_gastos(filas)
+            ignoradas = sum(1 for f in filas if _celda(f, 0)) - len(gastos)
+            if ignoradas:  # una fila que no se entiende no puede desaparecer en silencio
+                log.warning("filas_ignoradas", mes=mes, filas=ignoradas)
+            return gastos
 
         return await en_hilo(leer)
 
@@ -197,7 +216,7 @@ class SheetsGastosRepo:
         if ws is None:
             return None
         objetivo = gasto_id.strip().upper()
-        for n, fila in enumerate(ws.get_all_values()[1:], start=2):
+        for n, fila in enumerate(_filas(ws)[1:], start=2):
             if _celda(fila, 0).upper() == objetivo:
                 return ws, n, list(fila)
         return None
@@ -237,7 +256,7 @@ class SheetsGastosRepo:
             ws = self._c.hoja(mes)
             if ws is None:
                 return 0
-            bloque, cambios = reconvertir_filas(ws.get_all_values()[1:], tc)
+            bloque, cambios = reconvertir_filas(_filas(ws)[1:], tc)
             if cambios:
                 ws.update(
                     values=bloque,
