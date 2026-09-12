@@ -213,7 +213,7 @@ async def test_el_mensaje_separa_la_inversion_del_ahorro_y_del_gasto() -> None:
     assert "Gastaron U$S 100,00 en 1 movimiento." in texto  # la inversión no es gasto
     assert "Ahorro e inversión de la quincena: U$S 350,00" in texto
     assert "• Inversión: U$S 300,00" in texto and "• Ahorro: U$S 50,00" in texto
-    assert "Ya apartado: Inversión U$S 300,00 · Ahorro U$S 50,00" in texto
+    assert "Ya apartado: Inversión U$S 300,00 · Ahorro U$S 50,00 (86 % al portafolio)" in texto
     assert "Objetivo del mes: U$S 350,00 de U$S 1.200,00 (29 %) 🟡" in texto
     (indicador,) = storage.dashboard.recalculos  # type: ignore[attr-defined]
     assert indicador.inversion_usd == Decimal("300")

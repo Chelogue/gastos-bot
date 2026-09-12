@@ -14,8 +14,9 @@ Marcelo lo pidió así: quiere ver lo que ya se ejecutó en el portafolio y cele
 cuánto de ese objetivo ya se ejecutó (`ejecutado_pct` sobre el rubro Ahorro completo) y un estado
 propio, `Ejecucion`: 🟡 en camino, 🎯 cumplido, 🚀 superado. Convive con `Cumplimiento`, que sigue
 mirando solo el gasto: son dos preguntas distintas y cada una tiene su columna en el Dashboard.
-La inversión se sigue midiendo aparte del resto del rubro (ADR 0008), así se ve qué parte del
-objetivo fue al portafolio y qué parte quedó en ahorro o en pagar deuda.
+La inversión se sigue midiendo aparte del resto del rubro (ADR 0008), y se agrega qué porcentaje
+de lo apartado terminó en el portafolio: ese es el número que se quiere empujar, sin castigar al
+fondo de emergencia ni al pago extra de deuda, que van antes que invertir.
 
 ## Consecuencias
 El Dashboard pasa a 23 columnas, que es mucho para leer a ojo pero es justo lo que necesita una

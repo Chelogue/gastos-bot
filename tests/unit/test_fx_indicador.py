@@ -198,6 +198,15 @@ def test_el_objetivo_del_20_por_ciento_se_puede_cumplir_y_superar() -> None:
     assert superado.cumplimiento is Cumplimiento.OK  # pasarse de ahorro no es un problema
 
 
+def test_que_parte_de_lo_apartado_fue_al_portafolio() -> None:
+    mixto = _con_ahorro(("150", "Inversión"), ("50", "Ahorro"))
+    assert mixto.inversion_pct_apartado == Decimal("0.75")
+    solo_ahorro = _con_ahorro(("200", "Ahorro"))
+    assert solo_ahorro.inversion_pct_apartado == Decimal("0")
+    sin_nada = _calcular([])
+    assert sin_nada.inversion_pct_apartado == Decimal("0")
+
+
 def test_sin_ingreso_no_hay_objetivo_que_superar() -> None:
     ind = _con_ahorro(("100", "Inversión"), ingreso="0")
     assert ind.ahorro_tope_usd == Decimal("0")

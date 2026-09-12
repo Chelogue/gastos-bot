@@ -111,6 +111,11 @@ class Indicador:
         return self.ahorro_declarado_usd - self.inversion_usd
 
     @property
+    def inversion_pct_apartado(self) -> Decimal:
+        """Qué parte de lo apartado terminó en el portafolio. 0 si no apartaron nada."""
+        return _pct(self.inversion_usd, self.ahorro_declarado_usd)
+
+    @property
     def margen_del_objetivo_usd(self) -> Decimal:
         """Cuánto falta (negativo: cuánto se pasaron, que acá es una buena noticia)."""
         return self.ahorro_tope_usd - self.ahorro_declarado_usd

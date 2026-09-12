@@ -292,7 +292,10 @@ def reporte(r: Reporte) -> str:
     ]
     if ind.ahorro_por_subcategoria:
         detalle = " · ".join(f"{sub} {usd(monto)}" for sub, monto in ind.ahorro_por_subcategoria)
-        lineas.append(f"• Ya apartado: {detalle}")
+        al_portafolio = (
+            f" ({pct(ind.inversion_pct_apartado)} al portafolio)" if ind.inversion_usd else ""
+        )
+        lineas.append(f"• Ya apartado: {detalle}{al_portafolio}")
     if r.link_sheet:
         lineas += ["", f"📄 El Sheet: {r.link_sheet}"]
     if r.link_carpeta:
@@ -337,7 +340,8 @@ def dashboard(meses: Sequence[ResumenMes], link_sheet: str | None = None) -> str
             f" ({pct(m.ejecutado_pct)}) {m.ejecucion}"
         )
         if m.inversion_usd:
-            objetivo += f", en portafolio {usd(m.inversion_usd)}"
+            al_portafolio = pct(m.inversion_usd / ejecutado) if ejecutado else pct(0)
+            objetivo += f", al portafolio {usd(m.inversion_usd)} ({al_portafolio})"
         movimientos = "movimiento" if m.n_registros == 1 else "movimientos"
         lineas.append(objetivo)
         lineas.append(
