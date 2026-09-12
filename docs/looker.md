@@ -3,6 +3,11 @@
 El Sheet es la base de datos; Looker Studio es la pantalla linda. Es gratis, lee el Sheet directo
 y anda bien en el celular. Se arma una sola vez y después se actualiza solo.
 
+El tablero ya existe: **Gastos — Marcelo y Nikole**,
+https://datastudio.google.com/reporting/17ec8be2-bbc8-4af0-9f8f-ae3a78259fae
+Tiene el gasto por categoría, el objetivo del mes contra lo ahorrado e invertido, y la tarjeta de
+«ejecutado vs objetivo». Lo de abajo queda como referencia para agregarle lo que falta.
+
 ## Qué conectar
 
 | Fuente | Pestaña | Para qué |
@@ -27,6 +32,9 @@ la reescribe.
    los que a veces entran como número suelto.
 5. Agregá un **control de período** sobre `fecha_gasto` y un **filtro desplegable** por
    `quien_subio` y por `rubro`. Con eso ya podés cortar todo el tablero.
+
+Los campos que terminan en `_pct` entran como número: hay que cambiarles el tipo a Porcentaje
+(clic en el lápiz del campo → Tipo de datos → Numérico → Porcentaje), si no «120 %» se ve «1,2».
 
 ## Qué poner arriba
 
