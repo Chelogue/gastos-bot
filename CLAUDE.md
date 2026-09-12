@@ -22,14 +22,16 @@ es ambiguo, pregunta antes de decidir.
 - Todo update_id se deduplica antes de procesar.
 - Los proveedores de LLM se agregan como adaptadores en extraction/; nunca condicionales por proveedor fuera de ahí.
 - Cada decisión no trivial → ADR en docs/decisions/.
+- Al leer el Sheet, valores sin formatear: formateados dependen del idioma de la planilla (es_MX).
 - No desplegar a Cloud Run ni cambiar el webhook de Telegram sin confirmación explícita del usuario.
 
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** ninguna: las fases 0 a 4 están desplegadas (la 4 el 2026-09-11) y el menú de
-comandos de Telegram está al día. Lo único abierto del PRD es el bake-off R19, que espera los 30
-comprobantes; después toca elegir proveedor de LLM y escribir su ADR.
+**Fase en curso:** ninguna: fases 0 a 4 desplegadas. El 2026-09-12 se sumó el objetivo de ahorro
+e inversión (ADR 0010), la pestaña `Movimientos` para tableros (ADR 0011) y se arregló un bug que
+descartaba en silencio toda fila de mil o más al leer el Sheet (es_MX formatea «1,167.50»). El
+tablero de Looker Studio lo arma Marcelo siguiendo `docs/looker.md`. Abierto: el bake-off R19.
 
 **Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
 en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
