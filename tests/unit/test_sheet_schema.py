@@ -14,7 +14,11 @@ def test_columnas_del_prd() -> None:
     assert len(s.MES_COLUMNAS) == 20
     assert s.MES_COLUMNAS[0] == "id" and s.MES_COLUMNAS[-1] == "fecha_modificacion"
     # las 19 del PRD + inversion_usd (ADR 0008) + objetivo, ejecutado y ejecución (ADR 0010)
-    assert len(s.DASHBOARD_COLUMNAS) == 23
+    # + monto, % y tope de emprendimientos (ADR 0012)
+    assert len(s.DASHBOARD_COLUMNAS) == 26
+    assert {"emprendimientos_usd", "emprendimientos_pct", "emprendimientos_tope_usd"} <= set(
+        s.DASHBOARD_COLUMNAS
+    )
     assert {"inversion_usd", "ahorro_objetivo_usd", "ejecutado_pct", "ejecucion"} <= set(
         s.DASHBOARD_COLUMNAS
     )
@@ -33,12 +37,17 @@ def test_pestana_de_mes() -> None:
     assert s.nombre_pestana_mes(date(2026, 9, 10)) == "2026-09"
 
 
-def test_categorias_iniciales_cubren_los_tres_rubros() -> None:
-    assert len(CATEGORIAS_INICIALES) == 17
+def test_categorias_iniciales_cubren_los_cuatro_rubros() -> None:
+    assert len(CATEGORIAS_INICIALES) == 18
     subs = [sub for sub, _ in CATEGORIAS_INICIALES]
     assert len(subs) == len(set(subs))
     por_rubro = {r: sum(1 for _, rr in CATEGORIAS_INICIALES if rr == r) for r in Rubro}
-    assert por_rubro == {Rubro.NECESIDADES: 7, Rubro.DESEOS: 7, Rubro.AHORRO: 3}
+    assert por_rubro == {
+        Rubro.NECESIDADES: 7,
+        Rubro.DESEOS: 7,
+        Rubro.AHORRO: 3,
+        Rubro.EMPRENDIMIENTOS: 1,
+    }
     filas = s.categorias_iniciales()
     assert all(len(f) == len(s.CATEGORIAS_COLUMNAS) for f in filas)
     assert all(f[2] == "sí" for f in filas)
@@ -59,6 +68,7 @@ def test_config_inicial_con_y_sin_ids() -> None:
         int(params["pct_necesidades"]) + int(params["pct_deseos"]) + int(params["pct_ahorro"])
         == 100
     )
+    assert params["pct_emprendimientos"] == "15"  # aparte: no entra en la suma de 100
     assert params["zona_horaria"] == "America/Montevideo"
 
 
@@ -66,3 +76,4 @@ def test_graficos_referencian_columnas_existentes() -> None:
     for g in s.GRAFICOS:
         assert set(g.series) <= set(s.DASHBOARD_COLUMNAS)
         assert g.tipo in {"LINE", "COLUMN"}
+    assert not {g.titulo for g in s.GRAFICOS} & set(s.GRAFICOS_RETIRADOS)

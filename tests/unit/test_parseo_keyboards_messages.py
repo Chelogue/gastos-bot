@@ -115,7 +115,8 @@ def test_teclado_de_categorias_agrupado_por_rubro() -> None:
     datos = [b.data for f in teclado for b in f if b.data != kb.NOOP]
     assert datos[0] == "kc:p:0" and datos[-1] == "v:p"
     indices = [int(d.split(":")[2]) for d in datos if d.startswith("kc:")]
-    assert indices == list(range(17))
+    assert indices == list(range(18))
+    assert [kb.Boton("— Emprendimientos —", kb.NOOP)] in teclado
     assert all(len(b.data.encode()) <= 64 for f in teclado for b in f)
 
 
@@ -140,3 +141,31 @@ def test_textos_de_la_tarjeta() -> None:
     assert "¿$ o U$S?" in messages.resumen(ambiguo, None) and "⚠️" in messages.resumen(ambiguo, None)
     assert messages.monto_fmt(None, None) == "monto: ?"
     assert messages.resumen_guardado(listo, "Necesidades").startswith("-U$S 300,00 · Disco")
+
+
+def test_dashboard_muestra_emprendimientos_solo_si_hubo() -> None:
+    import dataclasses
+
+    from gastos_bot.domain.indicador import ResumenMes
+
+    base = ResumenMes(
+        mes="2026-09",
+        ingreso_usd=Decimal("6000"),
+        necesidades_usd=Decimal("1000"),
+        necesidades_pct=Decimal("0.1667"),
+        deseos_usd=Decimal("500"),
+        deseos_pct=Decimal("0.0833"),
+        ahorro_pct=Decimal("0.65"),
+        ahorro_objetivo_usd=Decimal("1200"),
+        ahorro_registrado_usd=Decimal("0"),
+        inversion_usd=Decimal("0"),
+        ejecutado_pct=Decimal("0"),
+        n_registros=3,
+        cumplimiento="✅",
+        ejecucion="🟡",
+    )
+    assert "Emprendimientos" not in messages.dashboard([base])
+    con = dataclasses.replace(
+        base, emprendimientos_usd=Decimal("600"), emprendimientos_pct=Decimal("0.1")
+    )
+    assert "• Emprendimientos U$S 600,00 (10 %)" in messages.dashboard([con])

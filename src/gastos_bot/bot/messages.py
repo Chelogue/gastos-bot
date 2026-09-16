@@ -273,6 +273,13 @@ def reporte(r: Reporte) -> str:
         lineas += ["", f"Ahorro e inversión de la quincena: {usd(r.ahorro_usd)}"]
         lineas += [f"• {sub}: {usd(monto)}" for sub, monto in r.ahorro_por_subcategoria]
 
+    if r.hubo_emprendimientos:  # ni gasto ni ahorro: plata en riesgo, con su tope (ADR 0012)
+        lineas += ["", f"Emprendimientos de la quincena: {usd(r.emprendimientos_usd)}"]
+        lineas += [
+            f"• {a.emprendimiento}: {usd(a.quincena_usd)} · acumulado {usd(a.acumulado_usd)}"
+            for a in r.aportes
+        ]
+
     ind = r.indicador
     lineas += [
         "",
@@ -286,6 +293,18 @@ def reporte(r: Reporte) -> str:
         _linea_rubro(
             "Deseos", ind.deseos.gastado_usd, ind.deseos.tope_usd, ind.deseos.pct_del_tope
         ),
+    ]
+    emprendimientos = ind.emprendimientos
+    if emprendimientos.tope_usd or emprendimientos.gastado_usd:
+        lineas.append(
+            _linea_rubro(
+                "Emprendimientos",
+                emprendimientos.gastado_usd,
+                emprendimientos.tope_usd,
+                emprendimientos.pct_del_tope,
+            )
+        )
+    lineas += [
         f"• Sin gastar: {usd(ind.ahorro_residual_usd)} ({pct(ind.ahorro_pct)} del ingreso)",
         f"• Objetivo del mes: {usd(ind.ahorro_declarado_usd)} de {usd(ind.ahorro_tope_usd)}"
         f" ({pct(ind.ejecutado_pct)}) {ind.ejecucion}",
@@ -334,6 +353,10 @@ def dashboard(meses: Sequence[ResumenMes], link_sheet: str | None = None) -> str
             f"• Necesidades {usd(m.necesidades_usd)} ({pct(m.necesidades_pct)}) · "
             f"Deseos {usd(m.deseos_usd)} ({pct(m.deseos_pct)})"
         )
+        if m.emprendimientos_usd:
+            lineas.append(
+                f"• Emprendimientos {usd(m.emprendimientos_usd)} ({pct(m.emprendimientos_pct)})"
+            )
         ejecutado = m.ahorro_registrado_usd + m.inversion_usd
         objetivo = (
             f"• Objetivo {usd(m.ahorro_objetivo_usd)} · ejecutado {usd(ejecutado)}"

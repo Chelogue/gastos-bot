@@ -42,6 +42,9 @@ DASHBOARD_COLUMNAS: tuple[str, ...] = (
     "deseos_usd",
     "deseos_pct",
     "deseos_tope_usd",
+    "emprendimientos_usd",
+    "emprendimientos_pct",
+    "emprendimientos_tope_usd",
     "ahorro_residual_usd",
     "ahorro_pct",
     "ahorro_objetivo_usd",
@@ -143,6 +146,7 @@ PARAMETROS_INICIALES: tuple[tuple[str, str, str], ...] = (
     ("pct_necesidades", "50", "R8"),
     ("pct_deseos", "30", "R8"),
     ("pct_ahorro", "20", "R8"),
+    ("pct_emprendimientos", "15", "ADR 0012: tope aparte, no suma con el 50/30/20"),
 )
 
 ConfigFila = tuple[str, str, str, str, str, str]
@@ -203,7 +207,14 @@ GRAFICOS: tuple[GraficoSpec, ...] = (
     GraficoSpec(
         "Gastado por rubro vs. tope (USD)",
         "COLUMN",
-        ("necesidades_usd", "necesidades_tope_usd", "deseos_usd", "deseos_tope_usd"),
+        (
+            "necesidades_usd",
+            "necesidades_tope_usd",
+            "deseos_usd",
+            "deseos_tope_usd",
+            "emprendimientos_usd",
+            "emprendimientos_tope_usd",
+        ),
     ),
     GraficoSpec("Total por persona (USD)", "COLUMN", ("marcelo_usd", "nikole_usd"), apilado=True),
     GraficoSpec(
@@ -213,5 +224,9 @@ GRAFICOS: tuple[GraficoSpec, ...] = (
         apilado=True,
     ),
 )
+
+# Gráficos que el bot creó alguna vez y ya no van: se borran por título, así un gráfico hecho a
+# mano en el Dashboard nunca se toca.
+GRAFICOS_RETIRADOS: tuple[str, ...] = ("Ahorro e inversión (USD)",)
 
 RUBROS: tuple[str, ...] = tuple(r.value for r in Rubro)

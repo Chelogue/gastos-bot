@@ -79,7 +79,7 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
 | D8 | **Ingresos cambian** | `Config` tiene ingreso por persona con `vigente_desde`. El indicador de cada mes usa el ingreso vigente ese mes. |
 | D9 | **Dashboard** | Lo mantiene el bot: una fila por mes recalculada en cada alta/edición/borrado. Sin fórmulas `INDIRECT` a pestañas dinámicas. Gráficos leen de esa tabla. |
 | D10 | **Tope quincenal** | El reporte del día 16 compara contra el **tope mensual completo** (muestra cuánto margen queda). |
-| D11 | **Ahorro** | Residual: ingreso − necesidades − deseos. Si registran movimientos del rubro Ahorro, el reporte muestra también el ahorro declarado. |
+| D11 | **Ahorro** | Residual: ingreso − necesidades − deseos − emprendimientos (ADR 0012). Si registran movimientos del rubro Ahorro, el reporte muestra también el ahorro declarado. |
 | D12 | **Zona horaria** | America/Montevideo para todo (reporte, `fecha_envio`, quincenas). |
 | D13 | **Chats de grupo** | El bot ignora updates que no sean chat privado con uno de los dos IDs. |
 
@@ -96,7 +96,7 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
 | R5 | **Escritura en Sheets** en la pestaña del mes de envío (`2026-09`) con el esquema de §9 | Pestaña creada desde plantilla si no existe, insertada **después** de `Dashboard` y en orden cronológico. Fila visible < 5 s tras ✅. `quien_subio` sale del ID de Telegram, nunca del LLM. `monto_usd` con el TC del mes |
 | R6 | **Categorías fijas** en `Categorias` (subcategoría, rubro, activa) | Editar la pestaña cambia botones y prompt sin redeploy (caché de 5 min). El LLM solo sugiere de esa lista |
 | R7 | **Tipo de cambio mensual automático**: día 1 a las 00:05 el job `/jobs/fx` consulta una API pública de cotizaciones y guarda UYU/USD en `Config` con fecha | Todas las conversiones del mes usan ese valor. Si la API falla → reutiliza el anterior y avisa por Telegram. Editable a mano en `Config`; si se edita, el bot recalcula `monto_usd` y el Dashboard del mes |
-| R8 | **Indicador 50/30/20** en USD sobre ingreso conjunto (ingresos vigentes de `Config`, UYU convertido con TC del mes) con todos los gastos activos, compartidos y personales | Topes: Necesidades 50 %, Deseos 30 %, Ahorro 20 % (porcentajes editables en `Config`). Gastado por rubro = Σ `monto_usd` de subcategorías del rubro. Ahorro según D11 |
+| R8 | **Indicador 50/30/20** en USD sobre ingreso conjunto (ingresos vigentes de `Config`, UYU convertido con TC del mes) con todos los gastos activos, compartidos y personales | Topes: Necesidades 50 %, Deseos 30 %, Ahorro 20 % (porcentajes editables en `Config`). Emprendimientos tiene tope propio, 15 %, fuera del 50/30/20 y del objetivo de ahorro (ADR 0012). Gastado por rubro = Σ `monto_usd` de subcategorías del rubro. Ahorro según D11 |
 | R9 | **Reporte quincenal** días 1 y 16 a las 09:00 UYT, a ambos, vía `/jobs/reporte` | Día 16: gastos 1–15 + avance del mes vs. topes. Día 1: gastos 16–fin + cierre del mes vs. topes. Contenido: total por persona, por subcategoría, por moneda (UYU y USD separados + total USD), indicador por rubro (gastado / tope / %), tasa de ahorro, link al Sheet y a la carpeta del mes |
 | R10 | **Dashboard** como primera pestaña: tabla mensual mantenida por el bot + gráficos | Columnas en §9. Se recalcula la fila del mes afectado en cada alta/edición/borrado y al cerrar el mes. Gráficos: tasa de ahorro mensual (línea), gastado por rubro vs. tope (barras), total por persona (barras apiladas) |
 | R11 | **Registro por texto** ("450 uyu farmacia", "-300 uyu devolución super") | Misma tarjeta; `link_imagen` vacío; `tipo_doc = texto` |
@@ -163,12 +163,13 @@ Orden de pestañas: `Dashboard` · `2026-09` · `2026-10` · … · `Config` · 
 | `ingreso_usd` | Ingreso conjunto convertido |
 | `necesidades_usd` · `necesidades_pct` · `necesidades_tope_usd` | Gastado, % del ingreso, tope 50 % |
 | `deseos_usd` · `deseos_pct` · `deseos_tope_usd` | Ídem 30 % |
-| `ahorro_residual_usd` · `ahorro_pct` | Ingreso − necesidades − deseos; % del ingreso (**tasa de ahorro = métrica de eficiencia**) |
+| `emprendimientos_usd` · `emprendimientos_pct` · `emprendimientos_tope_usd` | Ídem con su tope aparte, 15 % (ADR 0012) |
+| `ahorro_residual_usd` · `ahorro_pct` | Ingreso − necesidades − deseos − emprendimientos; % del ingreso (**tasa de ahorro = métrica de eficiencia**) |
 | `ahorro_declarado_usd` | Σ rubro Ahorro registrado (D11) |
 | `marcelo_usd` · `nikole_usd` | Total subido por cada uno |
 | `compartido_usd` · `personal_usd` | Por marca |
 | `n_registros` · `n_sin_editar_pct` | Volumen y calidad de extracción (G2) |
-| `cumplimiento` | ✅ si necesidades ≤ 50 % y deseos ≤ 30 %; ⚠️ si uno se pasa; ❌ si ambos |
+| `cumplimiento` | ✅ si ningún tope se pasa (necesidades, deseos, emprendimientos); ⚠️ si uno; ❌ si dos o más |
 
 Debajo de la tabla: gráficos nativos de Sheets (creados por el script de plantilla) que leen la tabla.
 
@@ -186,7 +187,7 @@ Debajo de la tabla: gráficos nativos de Sheets (creados por el script de planti
 | `moneda` | UYU / USD | |
 | `tc_mes` | número | |
 | `monto_usd` | número | `monto` si USD; `monto / tc_mes` si UYU |
-| `rubro` | Necesidades / Deseos / Ahorro | Derivado de la subcategoría |
+| `rubro` | Necesidades / Deseos / Ahorro / Emprendimientos | Derivado de la subcategoría |
 | `subcategoria` | texto | |
 | `medio_pago` | texto | Opcional |
 | `tipo_doc` | factura / debito / reembolso / texto | |
@@ -197,7 +198,7 @@ Debajo de la tabla: gráficos nativos de Sheets (creados por el script de planti
 | `estado` | activo / eliminado | |
 | `fecha_modificacion` | fecha-hora | |
 
-**`Config`:** `telegram_id` ↔ `nombre`; `ingreso` por persona con `moneda` y `vigente_desde`; `tc_uyu_usd` con `fecha`; `zona_horaria`; `hora_reporte`; `pct_necesidades / deseos / ahorro`; IDs de carpetas de Drive cacheados.
+**`Config`:** `telegram_id` ↔ `nombre`; `ingreso` por persona con `moneda` y `vigente_desde`; `tc_uyu_usd` con `fecha`; `zona_horaria`; `hora_reporte`; `pct_necesidades / deseos / ahorro / emprendimientos`; IDs de carpetas de Drive cacheados.
 **`Categorias`:** `subcategoria`, `rubro`, `activa`.
 **`Pendientes`:** `pendiente_id`, `update_id`, `telegram_id`, `json_extraccion`, `file_id`, `creado`, `expira`.
 
@@ -208,6 +209,7 @@ Debajo de la tabla: gráficos nativos de Sheets (creados por el script de planti
 | **Necesidades (50 %)** | Vivienda · Servicios · Supermercado · Transporte · Salud · Educación · Cuotas y seguros |
 | **Deseos (30 %)** | Restaurantes y delivery · Ocio · Suscripciones · Viajes · Compras · Cuidado personal · Regalos |
 | **Ahorro (20 %)** | Ahorro · Inversión · Pago extra de deuda |
+| **Emprendimientos (tope aparte, 15 %)** | Una por emprendimiento: Polybuk (ADR 0012) |
 
 ## 11. Métricas de éxito
 

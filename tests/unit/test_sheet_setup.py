@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from gastos_bot.storage import sheet_estilo as estilo
 from gastos_bot.storage import sheet_schema as schema
@@ -49,7 +50,7 @@ def test_crea_todo_desde_cero_en_el_orden_del_prd() -> None:
         estilo.etiquetas("2026-09", schema.MES_COLUMNAS)
     )
     assert por_titulo["Pendientes"].row_values(1)[0] == "ID pendiente"
-    assert r.filas_agregadas == {"Config": 10, "Categorias": 17}
+    assert r.filas_agregadas == {"Config": 11, "Categorias": 18}
     assert len(r.graficos_creados) == len(schema.GRAFICOS)
     assert r.avisos == []
 
@@ -82,10 +83,11 @@ def test_segunda_corrida_no_cambia_nada() -> None:
     ultimos = sh.batch_calls[-1]["requests"]
     assert not any("addChart" in q or "addBanding" in q for q in ultimos)
     assert sum(1 for q in ultimos if "updateEmbeddedObjectPosition" in q) == len(schema.GRAFICOS)
+    assert sum(1 for q in ultimos if "updateChartSpec" in q) == len(schema.GRAFICOS)
     meta = sh.fetch_sheet_metadata()["sheets"][0]
-    assert len(meta["bandedRanges"]) == 1 and len(meta["conditionalFormats"]) == 5
+    assert len(meta["bandedRanges"]) == 1 and len(meta["conditionalFormats"]) == 6
     categorias = next(ws for ws in sh.worksheets() if ws.title == "Categorias")
-    assert len(categorias.get_all_values()) == 1 + 17
+    assert len(categorias.get_all_values()) == 1 + 18
     assert len(sh.fetch_sheet_metadata()["sheets"][0]["charts"]) == len(schema.GRAFICOS)
 
 
@@ -232,3 +234,35 @@ def test_la_formula_de_movimientos_cae_al_otro_separador() -> None:
     ws.update = rechaza_la_coma  # type: ignore[method-assign]
     asegurar_movimientos(sh)
     assert ws.get_all_values()[1][0] == schema.formula_movimientos(["2026-09"], ";")
+
+
+def _columnas_del_grafico(chart: dict[str, Any]) -> list[str]:
+    return [
+        schema.DASHBOARD_COLUMNAS[s["series"]["sourceRange"]["sources"][0]["startColumnIndex"]]
+        for s in chart["spec"]["basicChart"]["series"]
+    ]
+
+
+def test_los_graficos_se_corrigen_si_se_corrieron_las_columnas() -> None:
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    dashboard = sh.worksheets()[0]
+    charts = sh.fetch_sheet_metadata()["sheets"][0]["charts"]
+    por_persona = next(ch for ch in charts if ch["spec"]["title"] == "Total por persona (USD)")
+    # como quedó en el Sheet real: el esquema sumó columnas y el gráfico dibujaba otra cosa
+    for serie in por_persona["spec"]["basicChart"]["series"]:
+        serie["series"]["sourceRange"]["sources"][0]["startColumnIndex"] -= 3
+    assert _columnas_del_grafico(por_persona) != ["marcelo_usd", "nikole_usd"]
+    retirado = {"chartId": 998, "spec": {"title": "Ahorro e inversión (USD)"}}
+    hecho_a_mano = {"chartId": 999, "spec": {"title": "El mío"}}
+    sh.batch_update({"requests": []})
+    sh._charts[dashboard.id] += [retirado, hecho_a_mano]
+
+    r = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+
+    assert r.graficos_borrados == ["Ahorro e inversión (USD)"] and not r.sin_cambios
+    charts = sh.fetch_sheet_metadata()["sheets"][0]["charts"]
+    titulos = [ch["spec"]["title"] for ch in charts]
+    assert "Ahorro e inversión (USD)" not in titulos and "El mío" in titulos
+    por_persona = next(ch for ch in charts if ch["spec"]["title"] == "Total por persona (USD)")
+    assert _columnas_del_grafico(por_persona) == ["marcelo_usd", "nikole_usd"]

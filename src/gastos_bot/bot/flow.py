@@ -242,6 +242,11 @@ class Flujo:
                     await self.tg.enviar(chat_id, msg.SIN_TC_CONSULTA.format(mes=mes))
                     return
                 gastos = await self.st.gastos.listar_mes(mes)
+                anteriores = (
+                    await self.st.gastos.listar_anteriores(mes)
+                    if quincenal.hay_emprendimientos(gastos)
+                    else []
+                )
             except StorageError as exc:
                 await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
                 return
@@ -253,6 +258,7 @@ class Flujo:
                 hoy=hoy,
                 sheet_id=self.sheet_id,
                 folder_id=config.carpetas.get(mes),
+                gastos_anteriores=anteriores,
             )
             await self.tg.enviar(chat_id, msg.reporte(reporte))
 

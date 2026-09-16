@@ -37,6 +37,9 @@ ETIQUETAS_DASHBOARD: dict[str, str] = {
     "deseos_usd": "Deseos (USD)",
     "deseos_pct": "Deseos %",
     "deseos_tope_usd": "Tope deseos",
+    "emprendimientos_usd": "Emprendimientos (USD)",
+    "emprendimientos_pct": "Emprendimientos %",
+    "emprendimientos_tope_usd": "Tope emprendimientos",
     "ahorro_residual_usd": "Ahorro residual (USD)",
     "ahorro_pct": "Tasa de ahorro",
     "ahorro_objetivo_usd": "Objetivo 20 % (USD)",
@@ -373,6 +376,14 @@ def reglas_dashboard(sheet_id: int) -> list[dict[str, Any]]:
             sheet_id,
             c("deseos_pct"),
             {"type": "NUMBER_GREATER", "values": [{"userEnteredValue": "0.3"}]},
+            rojo,
+        )
+    )
+    reglas.append(
+        _regla(
+            sheet_id,
+            c("emprendimientos_pct"),
+            {"type": "NUMBER_GREATER", "values": [{"userEnteredValue": "0.15"}]},
             rojo,
         )
     )

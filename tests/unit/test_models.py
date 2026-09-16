@@ -138,6 +138,13 @@ def test_porcentajes_suman_100() -> None:
         Porcentajes(necesidades=60, deseos=30, ahorro=20)
 
 
+def test_el_tope_de_emprendimientos_no_entra_en_la_suma() -> None:
+    assert Porcentajes().emprendimientos == 15
+    assert Porcentajes(emprendimientos=40).ahorro == 20  # el 50/30/20 sigue sumando 100 solo
+    with pytest.raises(ValidationError):
+        Porcentajes(emprendimientos=101)
+
+
 def _ingreso(monto: int, desde: date) -> Ingreso:
     return Ingreso(nombre="Marcelo", monto=Decimal(monto), moneda=Moneda.UYU, vigente_desde=desde)
 

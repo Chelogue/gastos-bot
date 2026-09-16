@@ -211,3 +211,47 @@ def test_sin_ingreso_no_hay_objetivo_que_superar() -> None:
     ind = _con_ahorro(("100", "Inversión"), ingreso="0")
     assert ind.ahorro_tope_usd == Decimal("0")
     assert ind.ejecutado_pct == Decimal("0") and ind.ejecucion is Ejecucion.EN_CAMINO
+
+
+def test_emprendimientos_tienen_tope_y_no_cuentan_como_ahorro() -> None:
+    # ingreso 1000 → tope de emprendimientos 150 (15 %), objetivo de ahorro 200 (20 %)
+    ind = _calcular(
+        [
+            _gasto("100", Rubro.NECESIDADES),
+            _gasto("120", Rubro.EMPRENDIMIENTOS, subcategoria="Polybuk"),
+            _gasto("30", Rubro.EMPRENDIMIENTOS, subcategoria="Otro", quien="Nikole"),
+            _gasto("999", Rubro.EMPRENDIMIENTOS, subcategoria="Polybuk", estado=Estado.ELIMINADO),
+            _gasto("200", Rubro.AHORRO, subcategoria="Inversión"),
+        ]
+    )
+    assert ind.emprendimientos.gastado_usd == Decimal("150")
+    assert ind.emprendimientos.tope_usd == Decimal("150.00")
+    assert ind.emprendimientos.pct_ingreso == Decimal("0.15")
+    assert not ind.emprendimientos.excedido  # llegar justo al tope no es pasarse
+    assert ind.emprendimientos_por_subcategoria == (
+        ("Polybuk", Decimal("120")),
+        ("Otro", Decimal("30")),
+    )
+    # el objetivo del 20 % se cumple solo con ahorro y portafolio
+    assert ind.ahorro_declarado_usd == Decimal("200")
+    assert ind.ejecucion is Ejecucion.CUMPLIDO
+    # pero esa plata ya no está en casa: sale de lo que les quedó
+    assert ind.ahorro_residual_usd == Decimal("750")
+    assert ind.cumplimiento is Cumplimiento.OK
+
+
+def test_pasarse_en_emprendimientos_es_un_tope_mas() -> None:
+    polybuk = _gasto("151", Rubro.EMPRENDIMIENTOS, subcategoria="Polybuk")
+    solo = _calcular([polybuk])
+    assert solo.emprendimientos.excedido and solo.cumplimiento is Cumplimiento.ADVERTENCIA
+    con_necesidades = _calcular([polybuk, _gasto("600", Rubro.NECESIDADES)])
+    assert con_necesidades.cumplimiento is Cumplimiento.EXCEDIDO
+    sin_tope = calcular(
+        "2026-09",
+        [polybuk],
+        ingreso_usd=Decimal("1000"),
+        tc_uyu_usd=TC,
+        porcentajes=Porcentajes(emprendimientos=0),
+        personas=PERSONAS,
+    )
+    assert sin_tope.emprendimientos.excedido  # con tope 0, cualquier aporte se pasa

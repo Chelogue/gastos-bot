@@ -252,6 +252,8 @@ class Porcentajes(BaseModel):
     necesidades: Annotated[int, Field(ge=0, le=100)] = 50
     deseos: Annotated[int, Field(ge=0, le=100)] = 30
     ahorro: Annotated[int, Field(ge=0, le=100)] = 20
+    emprendimientos: Annotated[int, Field(ge=0, le=100)] = 15
+    """Tope aparte: no forma parte del 50/30/20 ni de la suma (ADR 0012)."""
 
     @model_validator(mode="after")
     def _suman_100(self) -> Porcentajes:

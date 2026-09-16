@@ -59,8 +59,10 @@ def _decimal(valor: str | float | int) -> Decimal:
         raise ValueError(f"número inválido: {valor!r}") from exc
 
 
-def _porcentaje(valor: str) -> Decimal:
+def _porcentaje(valor: str | float | int) -> Decimal:
     """El Sheet devuelve los porcentajes formateados: «23,33 %» → 0.2333; «0.2333» → 0.2333."""
+    if not isinstance(valor, str):
+        return _decimal(valor)
     txt = valor.strip()
     if txt.endswith("%"):
         return _decimal(txt[:-1]) / 100
@@ -77,6 +79,15 @@ def _fecha_hora(valor: str) -> datetime:
 
 def _campo(fila: Sequence[Any], i: int) -> str:
     return str(fila[i]).strip() if i < len(fila) and fila[i] is not None else ""
+
+
+def _numero(fila: Sequence[Any], i: int) -> str | float | int:
+    """Como ``_campo``, pero un número que ya llega como número (lectura sin formatear) pasa tal
+    cual: hecho texto, 0.125 parecería «125» con separador de miles."""
+    valor = fila[i] if i < len(fila) else None
+    if isinstance(valor, int | float) and not isinstance(valor, bool):
+        return valor
+    return _campo(fila, i)
 
 
 # ---------- Config ----------
@@ -123,6 +134,7 @@ def parsear_config(filas: Sequence[Sequence[Any]]) -> Config:
         necesidades=int(params.get("pct_necesidades", 50)),
         deseos=int(params.get("pct_deseos", 30)),
         ahorro=int(params.get("pct_ahorro", 20)),
+        emprendimientos=int(params.get("pct_emprendimientos", 15)),
     )
     return Config(
         personas=tuple(personas),
@@ -152,7 +164,7 @@ def fila_tc(tc: TipoCambio, nota: str = "") -> list[Any]:
     ]
 
 
-def _mismo_numero(crudo: str, valor: Decimal) -> bool:
+def _mismo_numero(crudo: str | float | int, valor: Decimal) -> bool:
     try:
         return _decimal(crudo) == valor
     except ValueError:
@@ -170,9 +182,9 @@ def reconvertir_filas(filas: Sequence[Sequence[Any]], tc: Decimal) -> tuple[list
     bloque: list[list[Any]] = []
     cambios = 0
     for fila in filas:
-        crudo_tc, crudo_usd = _campo(fila, c("tc_mes")), _campo(fila, c("monto_usd"))
+        crudo_tc, crudo_usd = _numero(fila, c("tc_mes")), _numero(fila, c("monto_usd"))
         try:
-            monto = _decimal(_campo(fila, c("monto")))
+            monto = _decimal(_numero(fila, c("monto")))
             moneda = Moneda(_campo(fila, c("moneda")).upper())
             usd = a_usd(monto, moneda, tc)
         except (ValueError, KeyError, TipoCambioInvalido):
@@ -227,10 +239,10 @@ def fila_a_gasto(fila: Sequence[Any]) -> Gasto:
         quien_subio=_campo(fila, c("quien_subio")),
         compartido=_bool(_campo(fila, c("compartido"))),
         comercio=_campo(fila, c("comercio")),
-        monto=_decimal(_campo(fila, c("monto"))),
+        monto=_decimal(_numero(fila, c("monto"))),
         moneda=Moneda(_campo(fila, c("moneda")).upper()),
-        tc_mes=_decimal(_campo(fila, c("tc_mes"))),
-        monto_usd=_decimal(_campo(fila, c("monto_usd"))),
+        tc_mes=_decimal(_numero(fila, c("tc_mes"))),
+        monto_usd=_decimal(_numero(fila, c("monto_usd"))),
         rubro=Rubro(_campo(fila, c("rubro"))),
         subcategoria=_campo(fila, c("subcategoria")),
         medio_pago=_campo(fila, c("medio_pago")) or None,
@@ -292,6 +304,9 @@ def indicador_a_fila(ind: Indicador) -> list[Any]:
         "deseos_usd": float(ind.deseos.gastado_usd),
         "deseos_pct": float(ind.deseos.pct_ingreso),
         "deseos_tope_usd": float(ind.deseos.tope_usd),
+        "emprendimientos_usd": float(ind.emprendimientos.gastado_usd),
+        "emprendimientos_pct": float(ind.emprendimientos.pct_ingreso),
+        "emprendimientos_tope_usd": float(ind.emprendimientos.tope_usd),
         "ahorro_residual_usd": float(ind.ahorro_residual_usd),
         "ahorro_pct": float(ind.ahorro_pct),
         "ahorro_objetivo_usd": float(ind.ahorro_tope_usd),
@@ -322,19 +337,21 @@ def filas_a_resumenes(filas: Sequence[Sequence[Any]]) -> list[ResumenMes]:
             salida.append(
                 ResumenMes(
                     mes=mes,
-                    ingreso_usd=_decimal(_campo(fila, c("ingreso_usd"))),
-                    necesidades_usd=_decimal(_campo(fila, c("necesidades_usd"))),
-                    necesidades_pct=_porcentaje(_campo(fila, c("necesidades_pct"))),
-                    deseos_usd=_decimal(_campo(fila, c("deseos_usd"))),
-                    deseos_pct=_porcentaje(_campo(fila, c("deseos_pct"))),
-                    ahorro_pct=_porcentaje(_campo(fila, c("ahorro_pct"))),
-                    ahorro_objetivo_usd=_decimal(_campo(fila, c("ahorro_objetivo_usd"))),
-                    ahorro_registrado_usd=_decimal(_campo(fila, c("ahorro_registrado_usd"))),
-                    inversion_usd=_decimal(_campo(fila, c("inversion_usd"))),
-                    ejecutado_pct=_porcentaje(_campo(fila, c("ejecutado_pct"))),
-                    n_registros=int(_decimal(_campo(fila, c("n_registros")))),
+                    ingreso_usd=_decimal(_numero(fila, c("ingreso_usd"))),
+                    necesidades_usd=_decimal(_numero(fila, c("necesidades_usd"))),
+                    necesidades_pct=_porcentaje(_numero(fila, c("necesidades_pct"))),
+                    deseos_usd=_decimal(_numero(fila, c("deseos_usd"))),
+                    deseos_pct=_porcentaje(_numero(fila, c("deseos_pct"))),
+                    ahorro_pct=_porcentaje(_numero(fila, c("ahorro_pct"))),
+                    ahorro_objetivo_usd=_decimal(_numero(fila, c("ahorro_objetivo_usd"))),
+                    ahorro_registrado_usd=_decimal(_numero(fila, c("ahorro_registrado_usd"))),
+                    inversion_usd=_decimal(_numero(fila, c("inversion_usd"))),
+                    ejecutado_pct=_porcentaje(_numero(fila, c("ejecutado_pct"))),
+                    n_registros=int(_decimal(_numero(fila, c("n_registros")))),
                     cumplimiento=_campo(fila, c("cumplimiento")),
                     ejecucion=_campo(fila, c("ejecucion")),
+                    emprendimientos_usd=_decimal(_numero(fila, c("emprendimientos_usd"))),
+                    emprendimientos_pct=_porcentaje(_numero(fila, c("emprendimientos_pct"))),
                 )
             )
         except (ValueError, IndexError):

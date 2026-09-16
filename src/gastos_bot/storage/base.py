@@ -47,6 +47,13 @@ class GastosRepo(Protocol):
 
     async def listar_mes(self, mes: str) -> list[Gasto]: ...
 
+    async def listar_anteriores(self, mes: str) -> list[Gasto]:
+        """Los de todas las pestañas de mes anteriores a ``mes``, en una sola lectura.
+
+        Es para acumulados que cruzan meses, como lo puesto en cada emprendimiento (ADR 0012).
+        """
+        ...
+
     async def obtener(self, gasto_id: str) -> Gasto | None:
         """Busca por ID en la pestaña que le corresponde por fecha de envío (R12, R13)."""
         ...

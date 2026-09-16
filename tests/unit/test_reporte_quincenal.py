@@ -168,3 +168,42 @@ def test_quincena_solo_con_inversion() -> None:
     )
     assert not r.hubo_gastos and r.hubo_ahorro
     assert r.total_usd == Decimal("0") and r.ahorro_usd == Decimal("300")
+
+
+def _polybuk(dia: int, usd: str, mes: int = 9, estado: Estado = Estado.ACTIVO) -> Gasto:
+    g = _gasto(dia, usd, Moneda.USD, sub="Polybuk", rubro=Rubro.EMPRENDIMIENTOS, estado=estado)
+    envio = datetime(2026, mes, dia, 12, 0)
+    return g.model_copy(update={"fecha_envio": envio, "fecha_gasto": envio.date()})
+
+
+def test_emprendimientos_van_en_su_bloque_con_el_acumulado() -> None:
+    agosto = [_polybuk(20, "400", mes=8), _polybuk(21, "999", mes=8, estado=Estado.ELIMINADO)]
+    septiembre = [*MES, _polybuk(10, "600"), _polybuk(20, "50")]
+    r = quincenal.armar(
+        periodo=periodo_reporte(date(2026, 9, 16)),
+        gastos_del_mes=septiembre,
+        config=_config(),
+        tc=TC,
+        gastos_anteriores=agosto,
+    )
+    # no es gasto: los totales de la quincena quedan como sin Polybuk
+    assert r.n_gastos == 3 and r.total_usd == Decimal("250")
+    assert r.hubo_emprendimientos and r.n_emprendimientos == 1
+    assert r.emprendimientos_usd == Decimal("600")
+    # acumulado: agosto sin lo borrado, más todo lo registrado en septiembre
+    assert r.aportes == (quincenal.Aporte("Polybuk", Decimal("600"), Decimal("1050")),)
+    assert r.indicador.emprendimientos.gastado_usd == Decimal("650")
+
+
+def test_solo_hace_falta_el_historico_si_hay_emprendimientos() -> None:
+    assert not quincenal.hay_emprendimientos(MES)
+    assert quincenal.hay_emprendimientos([*MES, _polybuk(10, "600")])
+    assert not quincenal.hay_emprendimientos([_polybuk(10, "600", estado=Estado.ELIMINADO)])
+    sin_anteriores = quincenal.armar(
+        periodo=periodo_reporte(date(2026, 9, 16)),
+        gastos_del_mes=[_polybuk(10, "600")],
+        config=_config(),
+        tc=TC,
+    )
+    assert not sin_anteriores.hubo_gastos and sin_anteriores.hubo_emprendimientos
+    assert sin_anteriores.aportes[0].acumulado_usd == Decimal("600")

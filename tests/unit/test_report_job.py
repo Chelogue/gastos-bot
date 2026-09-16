@@ -217,3 +217,31 @@ async def test_el_mensaje_separa_la_inversion_del_ahorro_y_del_gasto() -> None:
     assert "Objetivo del mes: U$S 350,00 de U$S 1.200,00 (29 %) 🟡" in texto
     (indicador,) = storage.dashboard.recalculos  # type: ignore[attr-defined]
     assert indicador.inversion_usd == Decimal("300")
+    assert storage.gastos.lecturas_anteriores == 0  # type: ignore[attr-defined]
+
+
+async def test_el_mensaje_cuenta_los_emprendimientos_aparte_con_su_acumulado() -> None:
+    storage = await _storage(
+        _config(),
+        _gasto(3, "4000"),  # 100 USD de supermercado
+        _gasto(10, "24000", sub="Polybuk", rubro=Rubro.EMPRENDIMIENTOS),  # 600 USD
+    )
+    agosto = _gasto(20, "16000", sub="Polybuk", rubro=Rubro.EMPRENDIMIENTOS)  # 400 USD
+    await storage.gastos.agregar(
+        agosto.model_copy(
+            update={"id": "G-260820-001", "fecha_envio": datetime(2026, 8, 20, 12, 0)}
+        )
+    )
+    mensajero = FakeMensajero()
+    await report_job.ejecutar(
+        storage=storage, avisador=mensajero, ahora=datetime(2026, 9, 16, 9, 0)
+    )
+    texto = mensajero.enviados[0]["texto"]
+    assert "Gastaron U$S 100,00 en 1 movimiento." in texto  # Polybuk no es gasto
+    assert "Emprendimientos de la quincena: U$S 600,00" in texto
+    assert "• Polybuk: U$S 600,00 · acumulado U$S 1.000,00" in texto
+    # ingreso 6000: tope 900; lo de Polybuk ya no está en casa
+    assert "• Emprendimientos: U$S 600,00 de U$S 900,00 (67 % del tope)" in texto
+    assert "• Sin gastar: U$S 5.300,00 (88 % del ingreso)" in texto
+    assert "Objetivo del mes: U$S 0,00 de U$S 1.200,00 (0 %) 🟡" in texto
+    assert storage.gastos.lecturas_anteriores == 1  # type: ignore[attr-defined]

@@ -86,7 +86,7 @@ async def test_config_y_categorias_con_cache(cliente: SheetsCliente) -> None:
     assert "2026-09/Nikole" in (await repo.cargar()).carpetas
 
     cat = await SheetsCategoriasRepo(cliente).catalogo()
-    assert len(cat.nombres_activos()) == 17
+    assert len(cat.nombres_activos()) == 18
 
 
 async def test_gastos_crea_pestana_y_lista(cliente: SheetsCliente) -> None:
@@ -315,3 +315,27 @@ async def test_dashboard_se_puede_leer_de_vuelta(cliente: SheetsCliente) -> None
     assert resumenes[0].n_registros == 1 and resumenes[0].cumplimiento == "✅"
     assert resumenes[0].necesidades_usd == Decimal("31.25")
     assert resumenes[0].ahorro_pct == Decimal("0.9951")
+
+
+async def test_listar_anteriores_lee_los_meses_previos_de_una_vez(cliente: SheetsCliente) -> None:
+    repo = SheetsGastosRepo(cliente)
+    assert await repo.listar_anteriores("2026-09") == []
+
+    def en(mes: int, gid: str) -> Gasto:
+        envio = datetime(2026, mes, 10, 12, 0, tzinfo=UTC)
+        return _gasto(gid).model_copy(update={"fecha_envio": envio})
+
+    await repo.agregar(en(8, "G-260810-001"))
+    await repo.agregar(en(7, "G-260710-001"))
+    await repo.agregar(en(8, "G-260810-002"))
+    await repo.agregar(_gasto("G-260910-001"))
+    await repo.agregar(en(10, "G-261010-001"))
+    cliente.sh.lecturas_por_lote.clear()
+
+    anteriores = await repo.listar_anteriores("2026-09")
+
+    assert [g.id for g in anteriores] == ["G-260710-001", "G-260810-001", "G-260810-002"]
+    assert anteriores[0].monto_usd == Decimal("31.25")
+    ((rangos, params),) = cliente.sh.lecturas_por_lote  # una sola llamada para todos los meses
+    assert rangos == ["'2026-07'!A2:T", "'2026-08'!A2:T"]
+    assert params["valueRenderOption"] == "UNFORMATTED_VALUE"

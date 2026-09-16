@@ -27,11 +27,14 @@ class Resultado:
     creadas: list[str] = field(default_factory=list)
     filas_agregadas: dict[str, int] = field(default_factory=dict)
     graficos_creados: list[str] = field(default_factory=list)
+    graficos_borrados: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
 
     @property
     def sin_cambios(self) -> bool:
-        return not (self.creadas or self.filas_agregadas or self.graficos_creados)
+        return not (
+            self.creadas or self.filas_agregadas or self.graficos_creados or self.graficos_borrados
+        )
 
 
 def _por_titulo(sh: Any) -> dict[str, Any]:
@@ -300,7 +303,7 @@ def _rango_columna(sheet_id: int, col: int) -> dict[str, Any]:
     }
 
 
-def _request_grafico(sheet_id: int, spec: schema.GraficoSpec, posicion: int) -> dict[str, Any]:
+def _spec_grafico(sheet_id: int, spec: schema.GraficoSpec) -> dict[str, Any]:
     c = schema.DASHBOARD_COLUMNAS.index
     basic: dict[str, Any] = {
         "chartType": spec.tipo,
@@ -315,10 +318,14 @@ def _request_grafico(sheet_id: int, spec: schema.GraficoSpec, posicion: int) -> 
     }
     if spec.apilado:
         basic["stackedType"] = "STACKED"
+    return {"title": spec.titulo, "basicChart": basic}
+
+
+def _request_grafico(sheet_id: int, spec: schema.GraficoSpec, posicion: int) -> dict[str, Any]:
     return {
         "addChart": {
             "chart": {
-                "spec": {"title": spec.titulo, "basicChart": basic},
+                "spec": _spec_grafico(sheet_id, spec),
                 "position": estilo.posicion_grafico(sheet_id, posicion),
             }
         }
@@ -326,11 +333,21 @@ def _request_grafico(sheet_id: int, spec: schema.GraficoSpec, posicion: int) -> 
 
 
 def _graficos(sheet_id: int, meta: _Meta, resultado: Resultado) -> list[dict[str, Any]]:
-    """Crea los gráficos que falten y acomoda los existentes en su lugar (lado a lado)."""
+    """Crea los gráficos que falten, borra los retirados y a los existentes les reescribe las
+    series y la posición: si el esquema movió columnas, un gráfico viejo seguiría apuntando a la
+    posición de antes y dibujaría otra cosa."""
     requests: list[dict[str, Any]] = []
+    for titulo in schema.GRAFICOS_RETIRADOS:
+        if titulo in meta.charts:
+            requests.append({"deleteEmbeddedObject": {"objectId": meta.charts[titulo]}})
+            resultado.graficos_borrados.append(titulo)
     for i, spec in enumerate(schema.GRAFICOS):
         if spec.titulo in meta.charts:
-            requests.append(estilo.mover_grafico(meta.charts[spec.titulo], sheet_id, i))
+            chart_id = meta.charts[spec.titulo]
+            requests.append(
+                {"updateChartSpec": {"chartId": chart_id, "spec": _spec_grafico(sheet_id, spec)}}
+            )
+            requests.append(estilo.mover_grafico(chart_id, sheet_id, i))
         else:
             requests.append(_request_grafico(sheet_id, spec, i))
             resultado.graficos_creados.append(spec.titulo)
