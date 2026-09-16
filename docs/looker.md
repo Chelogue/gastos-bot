@@ -5,8 +5,13 @@ y anda bien en el celular. Se arma una sola vez y después se actualiza solo.
 
 El tablero ya existe: **Gastos — Marcelo y Nikole**,
 https://datastudio.google.com/reporting/17ec8be2-bbc8-4af0-9f8f-ae3a78259fae
-Tiene el gasto por categoría, el objetivo del mes contra lo ahorrado e invertido, y la tarjeta de
-«ejecutado vs objetivo». Lo de abajo queda como referencia para agregarle lo que falta.
+Tiene el gasto por categoría, el objetivo del mes contra lo ahorrado e invertido, la tarjeta de
+«ejecutado vs objetivo» y emprendimientos contra su tope (en un solo eje: con eje doble, 600 y 950
+se ven iguales). Lo de abajo queda como referencia para agregarle lo que falta.
+
+Si el esquema del Dashboard cambia y los gráficos de esa fuente muestran «Error de configuración
+del conjunto de datos»: *Recurso → Gestionar las fuentes de datos añadidas → Gastos - Dashboard →
+Editar → Actualizar los campos → Aplicar → Hecho*.
 
 ## Qué conectar
 

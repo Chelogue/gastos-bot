@@ -31,7 +31,10 @@ Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos
 **Fase en curso:** ninguna: fases 0 a 4 desplegadas. El 2026-09-12 se sumó el objetivo de ahorro
 e inversión (ADR 0010), la pestaña `Movimientos` para tableros (ADR 0011) y se arregló un bug que
 descartaba en silencio toda fila de mil o más al leer el Sheet (es_MX formatea «1,167.50»). El
-tablero de Looker Studio lo arma Marcelo siguiendo `docs/looker.md`. Abierto: el bake-off R19.
+2026-09-16 se sumó el rubro Emprendimientos (ADR 0012): tope propio del 15 %, fuera del 50/30/20 y
+del objetivo de ahorro; de paso los gráficos del Dashboard reescriben sus series en cada
+`create_sheet.py` y un número sin formatear con tres decimales ya no se lee como miles. El tablero
+de Looker Studio existe (link en `docs/looker.md`). Abierto: el bake-off R19.
 
 **Infra real:** GitHub Actions → Artifact Registry → Cloud Run (`DEPLOY_ENABLED=true`); secretos
 en Secret Manager; Drive y Sheets con el token OAuth de Marcelo (ADR 0006), no con la service
@@ -42,7 +45,6 @@ token OIDC de `gastos-bot-sa`, que el servicio verifica contra `JOBS_OIDC_EMAIL`
 
 **Requerimientos cerrados:** R1–R6, R14–R18 (validados de punta a punta con fotos reales el
 2026-09-10). R7, R8, R10 y la autorización OIDC de los jobs: en producción y verificados.
-R9: el reporte se probó con los datos reales del Sheet contra Telegram; falta verlo salir solo
-el día 16. R11, R12, R13: desplegados; `/total` y `/ultimos` verificados en producción, `/editar`
+R9: salió solo el 2026-09-16 a las 09:00 (Cloud Scheduler → `reporte_enviado`). R11, R12, R13: desplegados; `/total` y `/ultimos` verificados en producción, `/editar`
 y `/borrar` cubiertos por tests. R20–R24 (P1): desplegados; `/dashboard` verificado en producción. R19: único requerimiento
 abierto, el script está listo y faltan los 30 comprobantes.
