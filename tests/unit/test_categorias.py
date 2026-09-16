@@ -11,11 +11,13 @@ from gastos_bot.domain.categorias import (
 
 def test_catalogo_inicial_cubre_el_prd() -> None:
     cat = Catalogo.inicial()
-    assert len(cat.categorias) == len(CATEGORIAS_INICIALES) == 17
+    assert len(cat.categorias) == len(CATEGORIAS_INICIALES) == 18
     por_rubro = cat.por_rubro()
     assert len(por_rubro[Rubro.NECESIDADES]) == 7
     assert len(por_rubro[Rubro.DESEOS]) == 7
     assert por_rubro[Rubro.AHORRO] == ("Ahorro", "Inversión", "Pago extra de deuda")
+    assert por_rubro[Rubro.EMPRENDIMIENTOS] == ("Polybuk",)
+    assert cat.rubro_de("polybuk") is Rubro.EMPRENDIMIENTOS
 
 
 def test_busqueda_tolerante_y_normalizacion() -> None:

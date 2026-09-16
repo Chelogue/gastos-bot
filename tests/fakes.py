@@ -169,6 +169,7 @@ class FakeSpreadsheet:
         self._next_id = 0
         self._next_chart = 100
         self.batch_calls: list[dict[str, Any]] = []
+        self.lecturas_por_lote: list[tuple[list[str], dict[str, Any]]] = []
         if con_pestana_por_defecto:
             self.add_worksheet("Sheet1", 1000, 26)
 
@@ -210,6 +211,22 @@ class FakeSpreadsheet:
             ]
         }  # fmt: skip
 
+    def values_batch_get(
+        self, ranges: list[str], params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Como la API: rangos ``'titulo'!A2:T``, sin las filas vacías del final."""
+        self.lecturas_por_lote.append((list(ranges), dict(params or {})))
+        salida = []
+        for rango in ranges:
+            titulo, celdas = rango.rsplit("!", 1)
+            ws = next(w for w in self._sheets if w.title == titulo.strip("'"))
+            fila_ini = int("".join(ch for ch in celdas.split(":")[0] if ch.isdigit()))
+            filas = ws.get_all_values()[fila_ini - 1 :]
+            while filas and not any(filas[-1]):
+                filas.pop()
+            salida.append({"range": rango, "values": filas})
+        return {"valueRanges": salida}
+
     def _by_id(self, sheet_id: int) -> FakeWorksheet:
         return next(ws for ws in self._sheets if ws.id == sheet_id)
 
@@ -248,6 +265,19 @@ class FakeSpreadsheet:
                 self._next_chart += 1
                 chart["chartId"] = self._next_chart
                 self._charts.setdefault(sheet_id, []).append(chart)
+            elif "updateChartSpec" in req:
+                pedido = req["updateChartSpec"]
+                chart = next(
+                    ch
+                    for charts in self._charts.values()
+                    for ch in charts
+                    if ch["chartId"] == pedido["chartId"]
+                )
+                chart["spec"] = pedido["spec"]
+            elif "deleteEmbeddedObject" in req:
+                objeto = req["deleteEmbeddedObject"]["objectId"]
+                for charts in self._charts.values():
+                    charts[:] = [ch for ch in charts if ch["chartId"] != objeto]
             elif "addBanding" in req:
                 sheet_id = req["addBanding"]["bandedRange"]["range"]["sheetId"]
                 self._bandas.setdefault(sheet_id, []).append(req["addBanding"]["bandedRange"])
@@ -319,6 +349,7 @@ class FakeGastosRepo:
     def __init__(self, fallar_al_agregar: bool = False) -> None:
         self.filas: dict[str, list[Gasto]] = {}
         self.fallar_al_agregar = fallar_al_agregar
+        self.lecturas_anteriores = 0
 
     async def ids_del_mes(self, mes: str) -> list[str]:
         return [g.id for g in self.filas.get(mes, [])]
@@ -330,6 +361,10 @@ class FakeGastosRepo:
 
     async def listar_mes(self, mes: str) -> list[Gasto]:
         return list(self.filas.get(mes, []))
+
+    async def listar_anteriores(self, mes: str) -> list[Gasto]:
+        self.lecturas_anteriores += 1
+        return [g for m in sorted(self.filas) if m < mes for g in self.filas[m]]
 
     async def obtener(self, gasto_id: str) -> Gasto | None:
         for gastos in self.filas.values():
@@ -435,6 +470,8 @@ class FakeDashboardRepo:
                 n_registros=i.n_registros,
                 cumplimiento=i.cumplimiento.value,
                 ejecucion=i.ejecucion.value,
+                emprendimientos_usd=i.emprendimientos.gastado_usd,
+                emprendimientos_pct=i.emprendimientos.pct_ingreso,
             )
             for i in sorted(por_mes.values(), key=lambda x: x.mes)
         ]

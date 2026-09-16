@@ -17,6 +17,7 @@ class Rubro(StrEnum):
     NECESIDADES = "Necesidades"
     DESEOS = "Deseos"
     AHORRO = "Ahorro"
+    EMPRENDIMIENTOS = "Emprendimientos"  # fuera del 50/30/20, con tope propio (ADR 0012)
 
 
 CATEGORIAS_INICIALES: tuple[tuple[str, Rubro], ...] = (
@@ -37,6 +38,7 @@ CATEGORIAS_INICIALES: tuple[tuple[str, Rubro], ...] = (
     ("Ahorro", Rubro.AHORRO),
     ("Inversión", Rubro.AHORRO),
     ("Pago extra de deuda", Rubro.AHORRO),
+    ("Polybuk", Rubro.EMPRENDIMIENTOS),  # una subcategoría por emprendimiento
 )
 
 _VALORES_ACTIVA = {"sí", "si", "yes", "true", "1", "x"}

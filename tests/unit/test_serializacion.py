@@ -24,6 +24,7 @@ from gastos_bot.storage.serializacion import (
     fila_a_pendiente,
     fila_tc,
     filas_a_gastos,
+    filas_a_resumenes,
     gasto_a_fila,
     indicador_a_fila,
     parsear_config,
@@ -45,6 +46,7 @@ def test_config_desde_filas_del_script() -> None:
     filas.append(["carpeta", "2026-09/Marcelo", "folder123", "", "", ""])
     filas.append(["param", "pct_necesidades", "60", "", "", ""])  # duplicado: gana el último
     filas.append(["param", "pct_deseos", "20", "", "", ""])
+    filas.append(["param", "pct_emprendimientos", "10", "", "", ""])
     filas.append(["basura", "", "", "", "", ""])
     filas.append(["persona", "Intruso", "no-es-numero", "", "", ""])
     cfg = parsear_config(filas)
@@ -55,7 +57,7 @@ def test_config_desde_filas_del_script() -> None:
     ingreso = cfg.ingreso_vigente("Nikole", date(2026, 9, 1))
     assert ingreso is not None and ingreso.monto == Decimal(3100)
     assert cfg.carpetas == {"2026-09/Marcelo": "folder123"}
-    assert cfg.porcentajes == Porcentajes(necesidades=60, deseos=20, ahorro=20)
+    assert cfg.porcentajes == Porcentajes(necesidades=60, deseos=20, ahorro=20, emprendimientos=10)
     assert cfg.zona_horaria == "America/Montevideo"
 
 
@@ -205,3 +207,57 @@ def test_una_fila_con_miles_ya_no_se_pierde() -> None:
     fila[schema.MES_COLUMNAS.index("monto_usd")] = "1,520.00"
     (g,) = filas_a_gastos([fila])
     assert g.monto == Decimal("1167.50") and g.monto_usd == Decimal("1520")
+
+
+def test_emprendimientos_van_y_vuelven_del_dashboard() -> None:
+    polybuk = _gasto().model_copy(
+        update={
+            "rubro": Rubro.EMPRENDIMIENTOS,
+            "subcategoria": "Polybuk",
+            "monto": Decimal("600"),
+            "moneda": Moneda.USD,
+            "monto_usd": Decimal("600"),
+        }
+    )
+    ind = calcular(
+        "2026-09",
+        [polybuk],
+        ingreso_usd=Decimal("6000"),
+        tc_uyu_usd=Decimal("40"),
+        porcentajes=Porcentajes(),
+        personas=("Marcelo", "Nikole"),
+    )
+    fila = indicador_a_fila(ind)
+    c = schema.DASHBOARD_COLUMNAS.index
+    assert fila[c("emprendimientos_usd")] == 600.0
+    assert fila[c("emprendimientos_pct")] == 0.1
+    assert fila[c("emprendimientos_tope_usd")] == 900.0
+    assert fila[c("ahorro_residual_usd")] == 5400.0
+    (resumen,) = filas_a_resumenes([fila])
+    assert resumen.emprendimientos_usd == Decimal("600")
+    assert resumen.emprendimientos_pct == Decimal("0.1")
+
+
+def test_un_numero_sin_formatear_con_tres_decimales_no_es_de_miles() -> None:
+    """Leído sin formatear, 12,5 % llega como 0.125: hecho texto parecía «125» (miles)."""
+    ind = calcular(
+        "2026-09",
+        [_gasto()],
+        ingreso_usd=Decimal("6000"),
+        tc_uyu_usd=Decimal("40"),
+        porcentajes=Porcentajes(),
+        personas=("Marcelo", "Nikole"),
+    )
+    fila = indicador_a_fila(ind)
+    c = schema.DASHBOARD_COLUMNAS.index
+    fila[c("necesidades_pct")] = 0.125
+    fila[c("ingreso_usd")] = 6000.125
+    (resumen,) = filas_a_resumenes([fila])
+    assert resumen.necesidades_pct == Decimal("0.125")
+    assert resumen.ingreso_usd == Decimal("6000.125")
+    gasto = gasto_a_fila(_gasto())
+    gasto[schema.MES_COLUMNAS.index("tc_mes")] = 40.125
+    (leido,) = filas_a_gastos([gasto])
+    assert leido.tc_mes == Decimal("40.125")
+    # escrito a mano como texto, «1,520» sigue siendo mil quinientos veinte
+    assert _decimal("1,520") == Decimal("1520")

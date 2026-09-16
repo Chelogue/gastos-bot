@@ -17,4 +17,4 @@ Qué se eligió y por qué (con números si los hay).
 Qué queda más fácil, qué queda más difícil, qué habría que revisar si cambia X.
 ```
 
-Pendientes de escribir cuando se resuelvan: proveedor de LLM (con resultado del bake-off), Sheet como base de datos, Dashboard mantenido por el bot, fuente del tipo de cambio.
+Pendiente de escribir cuando se resuelva: proveedor de LLM (con el resultado del bake-off).

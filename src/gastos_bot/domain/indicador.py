@@ -2,6 +2,8 @@
 
 Todo en USD sobre el ingreso conjunto vigente del mes. Cuenta gastos activos, compartidos y
 personales. Los porcentajes son fracciones (0.42 = 42 %); el Sheet los muestra como porcentaje.
+Emprendimientos tiene su propio tope, fuera del 50/30/20, y no cuenta para el objetivo de ahorro
+(ADR 0012).
 """
 
 from __future__ import annotations
@@ -22,11 +24,11 @@ CERO = Decimal("0")
 
 
 class Cumplimiento(StrEnum):
-    """Gasto: pasarse es malo."""
+    """Topes: pasarse es malo. Necesidades, deseos y emprendimientos (ADR 0012)."""
 
-    OK = "✅"  # necesidades ≤ 50 % y deseos ≤ 30 %
+    OK = "✅"  # ninguno se pasa
     ADVERTENCIA = "⚠️"  # uno se pasa
-    EXCEDIDO = "❌"  # los dos
+    EXCEDIDO = "❌"  # dos o más
 
 
 class Ejecucion(StrEnum):
@@ -81,6 +83,8 @@ class ResumenMes:
     n_registros: int
     cumplimiento: str
     ejecucion: str
+    emprendimientos_usd: Decimal = CERO
+    emprendimientos_pct: Decimal = CERO
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,8 @@ class Indicador:
     ingreso_usd: Decimal
     necesidades: RubroResumen
     deseos: RubroResumen
+    emprendimientos: RubroResumen  # plata en riesgo: tiene tope y no cuenta como ahorro
+    emprendimientos_por_subcategoria: tuple[tuple[str, Decimal], ...]  # uno por emprendimiento
     ahorro_residual_usd: Decimal
     ahorro_pct: Decimal  # tasa de ahorro = métrica de eficiencia (G5)
     ahorro_declarado_usd: Decimal  # todo el rubro Ahorro: guardado + invertido + deuda extra
@@ -127,6 +133,10 @@ def _pct(parte: Decimal, total: Decimal) -> Decimal:
     return (parte / total).quantize(FRACCION, rounding=ROUND_HALF_UP)
 
 
+def _de_mayor_a_menor(montos: dict[str, Decimal]) -> tuple[tuple[str, Decimal], ...]:
+    return tuple(sorted(montos.items(), key=lambda par: (-par[1], par[0])))
+
+
 def _tope(ingreso_usd: Decimal, pct: int) -> Decimal:
     return (ingreso_usd * pct / 100).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
 
@@ -154,6 +164,7 @@ def calcular(
     por_rubro = {r: CERO for r in Rubro}
     por_persona = {p: CERO for p in personas}
     ahorro_por_sub: dict[str, Decimal] = {}
+    emprendimientos_por_sub: dict[str, Decimal] = {}
     inversion = compartido = personal = CERO
     for g in activos:
         por_rubro[g.rubro] += g.monto_usd
@@ -161,6 +172,10 @@ def calcular(
             ahorro_por_sub[g.subcategoria] = ahorro_por_sub.get(g.subcategoria, CERO) + g.monto_usd
             if es_inversion(g.subcategoria):
                 inversion += g.monto_usd
+        elif g.rubro is Rubro.EMPRENDIMIENTOS:
+            emprendimientos_por_sub[g.subcategoria] = (
+                emprendimientos_por_sub.get(g.subcategoria, CERO) + g.monto_usd
+            )
         por_persona[g.quien_subio] = por_persona.get(g.quien_subio, CERO) + g.monto_usd
         if g.compartido:
             compartido += g.monto_usd
@@ -189,8 +204,17 @@ def calcular(
         _tope(ingreso_usd, porcentajes.deseos),
         _pct(por_rubro[Rubro.DESEOS], ingreso_usd),
     )
-    residual = ingreso_usd - necesidades.gastado_usd - deseos.gastado_usd  # D11
-    excedidos = sum(1 for r in (necesidades, deseos) if r.excedido)
+    emprendimientos = RubroResumen(
+        Rubro.EMPRENDIMIENTOS,
+        por_rubro[Rubro.EMPRENDIMIENTOS],
+        _tope(ingreso_usd, porcentajes.emprendimientos),
+        _pct(por_rubro[Rubro.EMPRENDIMIENTOS], ingreso_usd),
+    )
+    # D11 con ADR 0012: lo que se le pone a un emprendimiento ya no está en casa.
+    residual = (
+        ingreso_usd - necesidades.gastado_usd - deseos.gastado_usd - emprendimientos.gastado_usd
+    )
+    excedidos = sum(1 for r in (necesidades, deseos, emprendimientos) if r.excedido)
     cumplimiento = (
         Cumplimiento.OK
         if excedidos == 0
@@ -206,13 +230,13 @@ def calcular(
         ingreso_usd=ingreso_usd,
         necesidades=necesidades,
         deseos=deseos,
+        emprendimientos=emprendimientos,
+        emprendimientos_por_subcategoria=_de_mayor_a_menor(emprendimientos_por_sub),
         ahorro_residual_usd=residual,
         ahorro_pct=_pct(residual, ingreso_usd),
         ahorro_declarado_usd=por_rubro[Rubro.AHORRO],
         inversion_usd=inversion,
-        ahorro_por_subcategoria=tuple(
-            sorted(ahorro_por_sub.items(), key=lambda par: (-par[1], par[0]))
-        ),
+        ahorro_por_subcategoria=_de_mayor_a_menor(ahorro_por_sub),
         ahorro_tope_usd=objetivo_ahorro,
         ejecutado_pct=ejecutado_pct,
         ejecucion=ejecucion,

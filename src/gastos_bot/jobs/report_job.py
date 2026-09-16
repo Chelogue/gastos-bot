@@ -37,6 +37,9 @@ async def ejecutar(
     gastos = await storage.gastos.listar_mes(mes)
     if await storage.gastos.reconvertir_mes(mes, tc.valor):
         gastos = await storage.gastos.listar_mes(mes)
+    anteriores = (
+        await storage.gastos.listar_anteriores(mes) if quincenal.hay_emprendimientos(gastos) else []
+    )
 
     reporte = quincenal.armar(
         periodo=periodo,
@@ -45,6 +48,7 @@ async def ejecutar(
         tc=tc.valor,
         sheet_id=sheet_id,
         folder_id=config.carpetas.get(mes),
+        gastos_anteriores=anteriores,
     )
     # El indicador del reporte es el mismo cálculo que alimenta el Dashboard: se reusa tal cual.
     await storage.dashboard.recalcular(reporte.indicador)

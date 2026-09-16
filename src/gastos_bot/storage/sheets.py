@@ -207,6 +207,35 @@ class SheetsGastosRepo:
 
         return await en_hilo(leer)
 
+    async def listar_anteriores(self, mes: str) -> list[Gasto]:
+        def leer() -> list[Gasto]:
+            titulos = sorted(
+                ws.title
+                for ws in self._c.sh.worksheets()
+                if schema.es_pestana_de_mes(ws.title) and ws.title < mes
+            )
+            if not titulos:
+                return []
+            hasta = _letra(len(schema.MES_COLUMNAS) - 1)
+            respuesta = self._c.sh.values_batch_get(
+                [f"'{t}'!A2:{hasta}" for t in titulos],
+                params={
+                    "valueRenderOption": CRUDO["value_render_option"],
+                    "dateTimeRenderOption": CRUDO["date_time_render_option"],
+                },
+            )
+            gastos: list[Gasto] = []
+            for titulo, rango in zip(titulos, respuesta.get("valueRanges", []), strict=False):
+                filas = rango.get("values", [])
+                del_mes = filas_a_gastos(filas)
+                ignoradas = sum(1 for f in filas if _celda(f, 0)) - len(del_mes)
+                if ignoradas:
+                    log.warning("filas_ignoradas", mes=titulo, filas=ignoradas)
+                gastos += del_mes
+            return gastos
+
+        return await en_hilo(leer)
+
     def _buscar(self, gasto_id: str) -> tuple[Any, int, list[str]] | None:
         """(worksheet, número de fila 1-based, fila) del ID, o None. Bloqueante."""
         mes = mes_de_id(gasto_id)

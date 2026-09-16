@@ -121,14 +121,24 @@ def test_sin_bot_devuelve_503(settings_con_oidc: Settings) -> None:
 def test_los_jobs_reales_usan_el_storage_y_el_bot_del_flujo(settings: Settings) -> None:
     """Sin inyectar nada: Jobs sale del Flujo que armó bot/app.py (un solo Sheet, un solo Bot)."""
     from gastos_bot.bot.app import build_application
+    from gastos_bot.domain.models import Config, Persona
     from tests.fakes import FakeBot, flujo_factory_falso
 
+    # Sin ningún TC: el mes que toque reportar según la fecha de hoy nunca lo tiene.
+    sin_tc = Config(
+        personas=(
+            Persona(nombre="Marcelo", telegram_id=111),
+            Persona(nombre="Nikole", telegram_id=222),
+        )
+    )
     bot = FakeBot()
-    application = build_application(settings, bot=bot, flujo_factory=flujo_factory_falso())
+    application = build_application(
+        settings, bot=bot, flujo_factory=flujo_factory_falso(config=sin_tc)
+    )
     app = create_app(settings, application=application)
     with TestClient(app) as cliente:
         r = cliente.post("/jobs/reporte", headers={TELEGRAM_SECRET_HEADER: WEBHOOK_SECRET})
     assert r.status_code == 200 and r.json()["job"] == "reporte"
-    # el mes reportado no tiene TC en la Config falsa: avisa a los dos y no reporta
+    # el mes reportado no tiene TC: avisa a los dos y no reporta
     assert r.json()["ok"] is False and r.json()["avisados"] == 2
     assert [m["chat_id"] for m in bot.sent] == [111, 222]

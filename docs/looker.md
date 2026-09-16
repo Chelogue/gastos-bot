@@ -46,6 +46,9 @@ La pregunta de los cinco segundos es "cómo venimos este mes". Sugerencia de ord
 2. **Barras apiladas** sobre `Dashboard` por mes: `ahorro_registrado_usd` e `inversion_usd`, con
    `ahorro_objetivo_usd` como serie de referencia. Ahí se ve la parte que efectivamente fue al
    portafolio contra lo que se había presupuestado.
+   Los emprendimientos no entran acá (ADR 0012): van en su propio gráfico,
+   `emprendimientos_usd` contra `emprendimientos_tope_usd` por mes, y el acumulado de cada uno
+   sale de `Movimientos` filtrando `rubro = Emprendimientos` y agrupando por `subcategoria`.
 3. **Serie temporal** sobre `Dashboard`: `necesidades_pct` y `deseos_pct` con líneas de referencia
    en 50 % y 30 %.
 4. **Barras horizontales** sobre `Movimientos`: `monto_usd` por `subcategoria`, ordenado de mayor a

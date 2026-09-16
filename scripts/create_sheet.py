@@ -81,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  + pestaña creada: {t}")
     for t, n in resultado.filas_agregadas.items():
         print(f"  + {n} filas agregadas en {t}")
+    for g in resultado.graficos_borrados:
+        print(f"  gráfico retirado: {g}")
     for g in resultado.graficos_creados:
         print(f"  + gráfico creado: {g}")
     for aviso in resultado.avisos:
