@@ -15,6 +15,15 @@
    Sheets falló, el archivo se borra). Revisá que la service account siga siendo editora del Sheet
    y de la carpeta `Gastos/`.
 
+### Alerta automática
+
+`.github/workflows/healthcheck.yml` comprueba `/health` cada 5 minutos desde GitHub Actions, fuera
+de Cloud Run. Manda un aviso por Telegram solo al detectar la transición sano → caído y otro al
+recuperarse; el primer aviso incluye un prompt de diagnóstico listo para copiar al coding agent.
+El monitor lee `TELEGRAM_BOT_TOKEN` desde Secret Manager usando la identidad de deploy de GitHub.
+Si se cambia la infraestructura desde cero, volver a ejecutar `infra/setup_gcp.sh` para otorgar
+ese acceso. El estado de deduplicación se conserva en la caché de GitHub Actions.
+
 ## Tipo de cambio (R7)
 
 Lo fija solo el job `/jobs/fx` el día 1 a las 00:05, con la cotización de open.er-api.com

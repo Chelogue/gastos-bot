@@ -1,0 +1,102 @@
+name: Healthcheck
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: healthcheck
+  cancel-in-progress: false
+
+env:
+  SERVICE: gastos-bot
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  SERVICE_URL: ${{ vars.CLOUD_RUN_URL }}
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Autenticar en Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Recuperar estado anterior
+        uses: actions/cache/restore@v4
+        with:
+          path: .healthcheck-state
+          key: gastos-health-state-${{ github.run_id }}
+          restore-keys: gastos-health-state-
+
+      - name: Comprobar servicio y notificar
+        env:
+          CHAT_IDS: ${{ vars.TELEGRAM_ALLOWED_IDS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .healthcheck-state
+          PREVIOUS_STATE="unknown"
+          if [[ -f .healthcheck-state/state ]]; then
+            PREVIOUS_STATE="$(cat .healthcheck-state/state)"
+          fi
+
+          RESPONSE_FILE="$(mktemp)"
+          HTTP_CODE="$(curl -sS --max-time 30 -o "$RESPONSE_FILE" -w '%{http_code}' "$SERVICE_URL/health" || true)"
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            CURRENT_STATE="up"
+          else
+            CURRENT_STATE="down"
+          fi
+          printf '%s' "$CURRENT_STATE" > .healthcheck-state/state
+
+          send_telegram() {
+            local message="$1"
+            local token
+            token="$(gcloud secrets versions access latest --secret=TELEGRAM_BOT_TOKEN --project="$PROJECT_ID")"
+            IFS=',' read -ra ids <<< "$CHAT_IDS"
+            for chat_id in "${ids[@]}"; do
+              curl --fail-with-body -sS --max-time 30 \
+                -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+                --data-urlencode "chat_id=${chat_id}" \
+                --data-urlencode "text=${message}" \
+                >/dev/null
+            done
+          }
+
+          if [[ "$CURRENT_STATE" == "down" && "$PREVIOUS_STATE" != "down" ]]; then
+            BODY="$(tr '\n' ' ' < "$RESPONSE_FILE" | cut -c1-500)"
+            MESSAGE=$(cat <<EOF
+🚨 ALERTA: gastos-bot no responde
+
+Healthcheck: $SERVICE_URL/health
+Hora UTC: $(date -u '+%Y-%m-%d %H:%M:%S')
+HTTP: $HTTP_CODE
+Respuesta: $BODY
+
+Prompt para el coding agent:
+"El bot gastos-bot no responde. El healthcheck externo detectó una falla en $SERVICE_URL/health a las $(date -u '+%Y-%m-%d %H:%M:%S') UTC (HTTP $HTTP_CODE). Investiga primero el estado de Cloud Run, la revisión activa y los logs recientes; luego verifica el webhook de Telegram y sus errores. Busca especialmente errores de arranque, invalid_grant/credenciales OAuth de Google, secretos faltantes o revisiones no saludables. Identifica la causa raíz, propone el fix mínimo y ejecútalo solo después de validar el diagnóstico. Verifica al final /health y que el webhook responda HTTP 200."
+EOF
+)
+            send_telegram "$MESSAGE"
+          elif [[ "$CURRENT_STATE" == "up" && "$PREVIOUS_STATE" == "down" ]]; then
+            send_telegram "✅ gastos-bot recuperado. El healthcheck volvió a responder HTTP 200 en $(date -u '+%Y-%m-%d %H:%M:%S') UTC. Verifica Telegram si había mensajes pendientes."
+          fi
+
+      - name: Guardar estado actual
+        uses: actions/cache/save@v4
+        with:
+          path: .healthcheck-state
+          key: gastos-health-state-${{ github.run_id }}

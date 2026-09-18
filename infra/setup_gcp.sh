@@ -75,6 +75,11 @@ for role in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccou
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA_DEPLOY_EMAIL" \
     --role="$role" --quiet >/dev/null
 done
+# El monitor externo usa la misma identidad de GitHub Actions para leer únicamente el token
+# necesario para avisar por Telegram cuando Cloud Run no está saludable.
+gcloud secrets add-iam-policy-binding TELEGRAM_BOT_TOKEN \
+  --member="serviceAccount:$SA_DEPLOY_EMAIL" \
+  --role="roles/secretmanager.secretAccessor" --quiet >/dev/null
 if ! gcloud iam workload-identity-pools describe "$POOL" --location=global >/dev/null 2>&1; then
   gcloud iam workload-identity-pools create "$POOL" --location=global --display-name="GitHub" --quiet
 fi
