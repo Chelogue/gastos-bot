@@ -78,18 +78,16 @@ jobs:
 
           if [[ "$CURRENT_STATE" == "down" && "$PREVIOUS_STATE" != "down" ]]; then
             BODY="$(tr '\n' ' ' < "$RESPONSE_FILE" | cut -c1-500)"
-            MESSAGE=$(cat <<EOF
-            🚨 ALERTA: gastos-bot no responde
-
-            Healthcheck: $SERVICE_URL/health
-            Hora UTC: $(date -u '+%Y-%m-%d %H:%M:%S')
-            HTTP: $HTTP_CODE
-            Respuesta: $BODY
-
-            Prompt para el coding agent:
-            "El bot gastos-bot no responde. El healthcheck externo detectó una falla en $SERVICE_URL/health a las $(date -u '+%Y-%m-%d %H:%M:%S') UTC (HTTP $HTTP_CODE). Investiga primero el estado de Cloud Run, la revisión activa y los logs recientes; luego verifica el webhook de Telegram y sus errores. Busca especialmente errores de arranque, invalid_grant/credenciales OAuth de Google, secretos faltantes o revisiones no saludables. Identifica la causa raíz, propone el fix mínimo y ejecútalo solo después de validar el diagnóstico. Verifica al final /health y que el webhook responda HTTP 200."
-            EOF
-            )
+            MESSAGE=$(printf '%s\n' \
+              '🚨 ALERTA: gastos-bot no responde' \
+              '' \
+              "Healthcheck: $SERVICE_URL/health" \
+              "Hora UTC: $(date -u '+%Y-%m-%d %H:%M:%S')" \
+              "HTTP: $HTTP_CODE" \
+              "Respuesta: $BODY" \
+              '' \
+              'Prompt para el coding agent:' \
+              "El bot gastos-bot no responde. El healthcheck externo detectó una falla en $SERVICE_URL/health a las $(date -u '+%Y-%m-%d %H:%M:%S') UTC (HTTP $HTTP_CODE). Investiga primero el estado de Cloud Run, la revisión activa y los logs recientes; luego verifica el webhook de Telegram y sus errores. Busca especialmente errores de arranque, invalid_grant/credenciales OAuth de Google, secretos faltantes o revisiones no saludables. Identifica la causa raíz, propone el fix mínimo y ejecútalo solo después de validar el diagnóstico. Verifica al final /health y que el webhook responda HTTP 200.")
             send_telegram "$MESSAGE"
           elif [[ "$CURRENT_STATE" == "up" && "$PREVIOUS_STATE" == "down" ]]; then
             send_telegram "✅ gastos-bot recuperado. El healthcheck volvió a responder HTTP 200 en $(date -u '+%Y-%m-%d %H:%M:%S') UTC. Verifica Telegram si había mensajes pendientes."
