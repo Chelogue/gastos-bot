@@ -5,14 +5,22 @@ from gastos_bot.storage import sheet_schema as s
 
 
 def test_columnas_unicas_y_sin_espacios() -> None:
-    for cols in (s.DASHBOARD_COLUMNAS, s.MES_COLUMNAS, s.CONFIG_COLUMNAS, s.PENDIENTES_COLUMNAS):
+    for cols in (
+        s.DASHBOARD_COLUMNAS,
+        s.MES_COLUMNAS,
+        s.RECURRENTES_COLUMNAS,
+        s.CONFIG_COLUMNAS,
+        s.PENDIENTES_COLUMNAS,
+    ):
         assert len(cols) == len(set(cols))
         assert all(c == c.strip() and " " not in c for c in cols)
 
 
 def test_columnas_del_prd() -> None:
-    assert len(s.MES_COLUMNAS) == 20
-    assert s.MES_COLUMNAS[0] == "id" and s.MES_COLUMNAS[-1] == "fecha_modificacion"
+    assert len(s.MES_COLUMNAS) == 21
+    assert s.MES_COLUMNAS[0] == "id" and s.MES_COLUMNAS[-1] == "recurrente_id"
+    assert s.RECURRENTES_COLUMNAS[0] == "id"
+    assert s.RECURRENTES_COLUMNAS[-1] == "ultimo_gasto_id"
     # las 19 del PRD + inversion_usd (ADR 0008) + objetivo, ejecutado y ejecución (ADR 0010)
     # + monto, % y tope de emprendimientos (ADR 0012)
     assert len(s.DASHBOARD_COLUMNAS) == 26

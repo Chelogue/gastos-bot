@@ -5,7 +5,8 @@ Endpoints:
 - ``POST /webhook``: recibe updates de Telegram. Verifica el secret token y procesa el update de
   forma síncrona dentro del request (Cloud Run con min-instances=0 no garantiza CPU después de
   responder; ver docs/decisions/0001).
-- ``POST /jobs/fx`` (día 1, 00:05) y ``POST /jobs/reporte`` (días 1 y 16, 09:00): los llama Cloud
+- ``POST /jobs/fx`` (día 1, 00:05), ``POST /jobs/reporte`` (días 1 y 16, 09:00) y
+  ``POST /jobs/recurrentes`` (todos los días, 09:10): los llama Cloud
   Scheduler con OIDC (R7, R9, R14). Devuelven 200 con ``ok: false`` cuando el job no puede hacer
   su trabajo por datos (p. ej. falta el TC): reintentar no ayudaría y ya se avisó por Telegram.
 """
@@ -86,6 +87,10 @@ def create_app(
     @app.post("/jobs/reporte", dependencies=[Depends(require_job_auth)])
     async def job_reporte(request: Request) -> dict[str, Any]:
         return (await _jobs(request).reporte()).as_dict()
+
+    @app.post("/jobs/recurrentes", dependencies=[Depends(require_job_auth)])
+    async def job_recurrentes(request: Request) -> dict[str, Any]:
+        return (await _jobs(request).recurrentes()).as_dict()
 
     return app
 

@@ -32,6 +32,7 @@ from tests.fakes import (
     FakeGastosRepo,
     FakeMensajero,
     FakePendientesRepo,
+    FakeRecurrentesRepo,
 )
 
 MARCELO, NIKOLE = 111, 222
@@ -76,6 +77,7 @@ class Mundo:
         self.pendientes = FakePendientesRepo()
         self.drive = FakeDriveRepo()
         self.dashboard = FakeDashboardRepo()
+        self.recurrentes = FakeRecurrentesRepo()
         self.tg = FakeMensajero()
         self.reloj = AHORA
         storage = Storage(
@@ -83,6 +85,7 @@ class Mundo:
             categorias=FakeCategoriasRepo(),
             gastos=self.gastos,
             pendientes=self.pendientes,
+            recurrentes=self.recurrentes,
             drive=self.drive,
             dashboard=self.dashboard,
         )
@@ -614,3 +617,36 @@ async def test_repetir_un_id_que_no_existe() -> None:
         update_id=7, telegram_id=MARCELO, chat_id=MARCELO, gasto_id="G-260910-009"
     )
     assert m.tg.enviados[-1]["texto"] == msg.GASTO_NO_ENCONTRADO.format(id="G-260910-009")
+
+
+async def test_al_guardar_pregunta_si_es_unico_o_recurrente() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    assert "¿Este gasto es único o recurrente?" in m.tg.ultimo_texto
+    assert m.tg.ultimo_teclado_datos() == ["u:G-260910-001", "r:G-260910-001"]
+
+    await m.toque("r:G-260910-001")
+    assert m.tg.ultimo_teclado_datos() == [
+        "rf:G-260910-001:mensual",
+        "rf:G-260910-001:trimestral",
+        "rf:G-260910-001:semestral",
+        "rf:G-260910-001:anual",
+    ]
+    assert await m.toque("rf:G-260910-001:trimestral") == msg.TOAST_RECURRENCIA
+    recurrencia = await m.recurrentes.obtener("R-260910-001")
+    assert recurrencia is not None
+    assert recurrencia.telegram_id == MARCELO
+    assert recurrencia.frecuencia.value == "trimestral"
+    assert recurrencia.fecha_inicio == date(2026, 9, 3)
+    assert recurrencia.proxima_fecha == date(2026, 12, 3)
+    assert recurrencia.monto == Decimal("1250.50")
+    (origen,) = m.gastos.filas["2026-09"]
+    assert origen.recurrente_id == recurrencia.id
+
+
+async def test_gasto_unico_no_crea_recurrencia() -> None:
+    m = Mundo()
+    await _guardar_un_gasto(m)
+    assert await m.toque("u:G-260910-001") == msg.TOAST_OK
+    assert await m.recurrentes.listar_activas() == []
+    assert m.tg.ultimo_texto == msg.GASTO_UNICO.format(id="G-260910-001")

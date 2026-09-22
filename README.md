@@ -71,10 +71,19 @@ Cloud Scheduler llama dos endpoints con un token OIDC que el servicio verifica (
 |---|---|---|
 | `POST /jobs/fx` | día 1, 00:05 | fija el UYU/USD del mes en `Config` (ADR 0007), reconvierte las filas del mes y recalcula el Dashboard |
 | `POST /jobs/reporte` | días 1 y 16, 09:00 | manda a los dos el reporte de la quincena que cerró, con el avance del mes contra los topes 50/30/20 |
+| `POST /jobs/recurrentes` | todos los días, 09:10 | registra las recurrencias vencidas y avisa por Telegram a quien las creó |
 
 Se crean con `infra/setup_scheduler.sh <PROJECT_ID> us-central1` (idempotente, free tier). Para
 dispararlos a mano, `gcloud scheduler jobs run gastos-bot-fx --location us-central1`. Detalles y
 diagnóstico en `docs/runbook.md`.
+
+Al desplegar la versión con recurrencias por primera vez, migrá el Sheet de forma aditiva y creá
+el tercer job:
+
+```bash
+uv run python scripts/create_sheet.py --reescribir-encabezados
+infra/setup_scheduler.sh <PROJECT_ID> us-central1
+```
 
 ## Bake-off de modelos (R19)
 

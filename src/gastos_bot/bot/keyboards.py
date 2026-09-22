@@ -30,6 +30,14 @@ class Accion(StrEnum):
     BORRAR_SI = "bs"  # el "pendiente_id" es el ID del gasto (R13)
     BORRAR_NO = "bn"
     GUARDAR_IGUAL = "gi"  # guardar aunque parezca duplicado (R20)
+    UNICO = "u"
+    RECURRENTE = "r"
+    FRECUENCIA = "rf"
+    RECURRENTE_SIGUE = "rs"
+    RECURRENTE_MODIFICAR = "rm"
+    RECURRENTE_FINALIZAR = "rx"
+    MODIFICAR_SOLO = "ms"
+    MODIFICAR_PROXIMOS = "mp"
 
 
 @dataclass(frozen=True)
@@ -139,6 +147,43 @@ def confirmar_borrado(gasto_id: str) -> Teclado:
             _b("🗑️ Sí, borrar", Accion.BORRAR_SI, gasto_id),
             _b("↩️ No", Accion.BORRAR_NO, gasto_id),
         ]
+    ]
+
+
+def tipo_registro(gasto_id: str) -> Teclado:
+    return [
+        [
+            _b("1️⃣ Único", Accion.UNICO, gasto_id),
+            _b("🔁 Recurrente", Accion.RECURRENTE, gasto_id),
+        ]
+    ]
+
+
+def frecuencias(gasto_id: str) -> Teclado:
+    return [
+        [
+            _b("Mensual", Accion.FRECUENCIA, gasto_id, "mensual"),
+            _b("Trimestral", Accion.FRECUENCIA, gasto_id, "trimestral"),
+        ],
+        [
+            _b("Semestral", Accion.FRECUENCIA, gasto_id, "semestral"),
+            _b("Anual", Accion.FRECUENCIA, gasto_id, "anual"),
+        ],
+    ]
+
+
+def seguimiento_recurrencia(recurrente_id: str) -> Teclado:
+    return [
+        [_b("✅ Sigue igual", Accion.RECURRENTE_SIGUE, recurrente_id)],
+        [_b("✏️ Modificar", Accion.RECURRENTE_MODIFICAR, recurrente_id)],
+        [_b("⏹ Finalizar recurrencia", Accion.RECURRENTE_FINALIZAR, recurrente_id)],
+    ]
+
+
+def alcance_modificacion(recurrente_id: str) -> Teclado:
+    return [
+        [_b("Solo este gasto", Accion.MODIFICAR_SOLO, recurrente_id)],
+        [_b("Este y los próximos", Accion.MODIFICAR_PROXIMOS, recurrente_id)],
     ]
 
 

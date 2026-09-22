@@ -52,12 +52,13 @@ curl -X POST "https://<servicio>.a.run.app/jobs/fx?forzar=true" \
   -H "X-Telegram-Bot-Api-Secret-Token: $TELEGRAM_WEBHOOK_SECRET"
 ```
 
-## Los jobs de Cloud Scheduler (R7, R9)
+## Los jobs de Cloud Scheduler (R7, R9, R25)
 
 | Job | Cuándo | Qué hace |
 |---|---|---|
 | `gastos-bot-fx` | día 1, 00:05 | fija el TC del mes, reconvierte las filas y recalcula el Dashboard |
 | `gastos-bot-reporte` | días 1 y 16, 09:00 | manda el reporte de la quincena a los dos y cierra el mes en el Dashboard |
+| `gastos-bot-recurrentes` | todos los días, 09:10 | registra vencimientos y avisa por Telegram al creador |
 
 Se crean o actualizan con `infra/setup_scheduler.sh gastos-bot-508217 us-central1` (idempotente,
 dentro del free tier). Ver qué pasó:
@@ -150,5 +151,7 @@ recibe "expiró, reenviá la foto" si toca un botón viejo.
 5. `uv run python scripts/set_webhook.py --url https://<servicio>.a.run.app/webhook`.
 6. Mandar `/start` desde cada uno de los dos chats.
 7. Variable de repo `CLOUD_RUN_URL=https://<servicio>.a.run.app` y redeploy (es la audiencia OIDC).
-8. `infra/setup_scheduler.sh <PROJECT_ID> us-central1` y probar con
+8. `uv run python scripts/create_sheet.py --reescribir-encabezados` para crear `Recurrentes` y
+   agregar `recurrente_id` sin tocar los movimientos existentes.
+9. `infra/setup_scheduler.sh <PROJECT_ID> us-central1` y probar con
    `gcloud scheduler jobs run gastos-bot-reporte --location us-central1`.

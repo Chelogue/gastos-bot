@@ -12,11 +12,13 @@ from gastos_bot.storage.base import (
     DriveRepo,
     GastosRepo,
     PendientesRepo,
+    RecurrentesRepo,
 )
 from gastos_bot.storage.dashboard import SheetsDashboardRepo
 from gastos_bot.storage.drive import DriveApiReal, GoogleDriveRepo
 from gastos_bot.storage.google_auth import SCOPES_TODOS, get_credentials
 from gastos_bot.storage.pendientes import SheetsPendientesRepo
+from gastos_bot.storage.recurrentes import SheetsRecurrentesRepo
 from gastos_bot.storage.sheets import (
     SheetsCategoriasRepo,
     SheetsCliente,
@@ -31,6 +33,7 @@ class Storage:
     categorias: CategoriasRepo
     gastos: GastosRepo
     pendientes: PendientesRepo
+    recurrentes: RecurrentesRepo
     drive: DriveRepo
     dashboard: DashboardRepo
 
@@ -49,6 +52,7 @@ def crear_storage(settings: Settings) -> Storage:
         categorias=SheetsCategoriasRepo(cliente),
         gastos=SheetsGastosRepo(cliente),
         pendientes=SheetsPendientesRepo(cliente),
+        recurrentes=SheetsRecurrentesRepo(cliente),
         drive=GoogleDriveRepo(DriveApiReal(creds), settings.google_drive_root_folder_id, config),
         dashboard=SheetsDashboardRepo(cliente),
     )

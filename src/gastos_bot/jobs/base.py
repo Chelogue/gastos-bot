@@ -16,7 +16,7 @@ log = get_logger("gastos_bot.jobs")
 
 
 class Avisador(Protocol):
-    async def enviar(self, chat_id: int, texto: str) -> int: ...
+    async def enviar(self, chat_id: int, texto: str, teclado: Any = None) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -32,12 +32,14 @@ class Resultado:
         return {"job": self.job, "ok": self.ok, "avisados": len(self.avisados), **self.detalle}
 
 
-async def avisar(avisador: Avisador, destinatarios: Iterable[int], texto: str) -> tuple[int, ...]:
+async def avisar(
+    avisador: Avisador, destinatarios: Iterable[int], texto: str, teclado: Any = None
+) -> tuple[int, ...]:
     """Manda el mismo texto a cada persona. Un fallo con uno no impide avisarle al otro."""
     enviados: list[int] = []
     for chat_id in destinatarios:
         try:
-            await avisador.enviar(chat_id, texto)
+            await avisador.enviar(chat_id, texto, teclado)
             enviados.append(chat_id)
         except Exception:  # noqa: BLE001 — el job no se cae porque Telegram falle
             log.warning("aviso_fallido", chat_id=chat_id)

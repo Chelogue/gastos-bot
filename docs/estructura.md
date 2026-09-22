@@ -24,7 +24,7 @@ gastos-bot/
 │       └── deploy.yml             # build → Artifact Registry → Cloud Run, en push a main, con Workload Identity
 ├── infra/
 │   ├── setup_gcp.sh               # habilita APIs, crea SA, secretos, Artifact Registry, Scheduler jobs (idempotente)
-│   ├── setup_scheduler.sh         # crea los dos jobs (fx, reporte) con OIDC, idempotente
+│   ├── setup_scheduler.sh         # crea los tres jobs (fx, reporte, recurrentes) con OIDC
 │   └── cloudrun.yaml              # servicio: min-instances 0, timeout 120s, env vars, secretos montados
 ├── scripts/
 │   ├── create_sheet.py            # crea el Sheet completo: Dashboard, Config, Categorias, Pendientes, plantilla de mes, gráficos
@@ -33,7 +33,7 @@ gastos-bot/
 │   └── recalc_dashboard.py        # recalcula el Dashboard entero (útil tras editar TC a mano)
 ├── src/gastos_bot/
 │   ├── __init__.py
-│   ├── main.py                    # FastAPI: POST /webhook, POST /jobs/fx, POST /jobs/reporte, GET /health
+│   ├── main.py                    # FastAPI: webhook, jobs de fx/reporte/recurrentes y health
 │   ├── config.py                  # pydantic-settings: lee env vars; falla al arrancar si falta alguna
 │   ├── logging.py                 # structlog → JSON para Cloud Logging, con update_id en cada línea
 │   ├── auth.py                    # verifica secret token de Telegram y OIDC de Scheduler
@@ -42,6 +42,7 @@ gastos-bot/
 │   │   ├── models.py              # Gasto, Pendiente, Extraccion, Persona, Config (Pydantic)
 │   │   ├── categorias.py          # subcategoría → rubro, validación contra la lista
 │   │   ├── quincena.py            # Q1/Q2, rangos de fechas, zona horaria
+│   │   ├── recurrentes.py         # avance de fechas con día ancla y fin de mes
 │   │   ├── fx.py                  # conversión a USD con TC del mes
 │   │   ├── indicador.py           # cálculo 50/30/20, tasa de ahorro, cumplimiento
 │   │   ├── naming.py              # nombre de archivo y de carpeta en Drive, slug de comercio
@@ -59,6 +60,7 @@ gastos-bot/
 │   ├── storage/                   # I/O con Google
 │   │   ├── sheets.py              # cliente gspread; pestaña del mes, Config, Categorias (con caché)
 │   │   ├── pendientes.py          # CRUD de Pendientes + expiración + dedupe de update_id
+│   │   ├── recurrentes.py         # CRUD de plantillas en la pestaña Recurrentes
 │   │   ├── drive.py               # carpetas por mes/persona (IDs cacheados), subida, borrado
 │   │   └── dashboard.py           # recalcula la fila del mes en Dashboard
 │   │
@@ -79,7 +81,8 @@ gastos-bot/
 │   │
 │   └── jobs/
 │       ├── fx_job.py              # obtiene TC y lo guarda en Config
-│       └── report_job.py          # genera y envía el reporte a ambos
+│       ├── report_job.py          # genera y envía el reporte a ambos
+│       └── recurrentes_job.py     # materializa vencimientos y avisa al creador
 │
 └── tests/
     ├── conftest.py                # fixtures: config de prueba, cliente de Sheets falso, LLM falso

@@ -29,6 +29,7 @@ from tests.fakes import (
     FakeGastosRepo,
     FakeMensajero,
     FakePendientesRepo,
+    FakeRecurrentesRepo,
 )
 
 AHORA = datetime(2026, 10, 1, 0, 5)
@@ -59,6 +60,7 @@ def _storage(config: Config, gastos: FakeGastosRepo | None = None) -> Storage:
         categorias=FakeCategoriasRepo(),
         gastos=gastos or FakeGastosRepo(),
         pendientes=FakePendientesRepo(),
+        recurrentes=FakeRecurrentesRepo(),
         drive=FakeDriveRepo(),
         dashboard=FakeDashboardRepo(),
     )

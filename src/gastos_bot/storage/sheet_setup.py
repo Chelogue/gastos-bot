@@ -55,6 +55,10 @@ def _asegurar_pestana(
             title=titulo, rows=FILAS_INICIALES, cols=max(len(columnas), 8), index=index
         )
         resultado.creadas.append(titulo)
+    columnas_grilla = int(getattr(ws, "col_count", 0) or getattr(ws, "cols", 0))
+    if columnas_grilla and columnas_grilla < len(columnas):
+        # La grilla tiene que crecer antes de escribir el encabezado o Sheets rechaza el rango.
+        ws.add_cols(len(columnas) - columnas_grilla)
     visibles = estilo.etiquetas(titulo, columnas)
     encabezado = tuple(ws.row_values(1)[: len(columnas)])
     if not any(encabezado) or encabezado == columnas or forzar_encabezado:
@@ -69,14 +73,22 @@ def _asegurar_pestana(
     return ws
 
 
-def asegurar_movimientos(sh: Any, resultado: Resultado | None = None) -> Any:
+def asegurar_movimientos(
+    sh: Any, resultado: Resultado | None = None, *, forzar_encabezado: bool = False
+) -> Any:
     """Pestaña ``Movimientos``: todas las pestañas de mes apiladas por fórmula (ADR 0011).
 
     Es el rango que leen Looker Studio y las tablas dinámicas. Se reescribe cuando aparece un mes
     nuevo. La fórmula se prueba con cada separador de argumentos hasta que el Sheet la acepta.
     """
     resultado = resultado or Resultado()
-    ws = _asegurar_pestana(sh, schema.TAB_MOVIMIENTOS, schema.MES_COLUMNAS, resultado)
+    ws = _asegurar_pestana(
+        sh,
+        schema.TAB_MOVIMIENTOS,
+        schema.MES_COLUMNAS,
+        resultado,
+        forzar_encabezado=forzar_encabezado,
+    )
     meses = sorted(t for t in _por_titulo(sh) if schema.es_pestana_de_mes(t))
     for separador in schema.SEPARADORES_FORMULA:
         formula = schema.formula_movimientos(meses, separador)
@@ -145,7 +157,13 @@ def _completar_ids(ws: Any, telegram_ids: Mapping[str, int | None], resultado: R
 def _requests_orden_y_ocultas(sh: Any) -> list[dict[str, Any]]:
     titulos = _por_titulo(sh)
     meses = sorted(t for t in titulos if schema.es_pestana_de_mes(t))
-    orden = [schema.TAB_DASHBOARD, *meses, schema.TAB_MOVIMIENTOS, *schema.TABS_OCULTAS]
+    orden = [
+        schema.TAB_DASHBOARD,
+        *meses,
+        schema.TAB_MOVIMIENTOS,
+        schema.TAB_RECURRENCIAS,
+        *schema.TABS_OCULTAS,
+    ]
     orden = [t for t in orden if t in titulos]
     requests: list[dict[str, Any]] = []
     for i, titulo in enumerate(orden):
@@ -173,7 +191,6 @@ class _Meta:
     charts: dict[str, int]  # título → chartId
     tiene_bandas: bool
     reglas: int
-    columnas: int = 0  # las de la grilla, no las del esquema; 0 = no se pudo leer
 
 
 def _metadatos(sh: Any) -> dict[int, _Meta]:
@@ -184,21 +201,12 @@ def _metadatos(sh: Any) -> dict[int, _Meta]:
             ch.get("spec", {}).get("title", ""): ch.get("chartId", 0)
             for ch in hoja.get("charts", [])
         }
-        grid = hoja.get("properties", {}).get("gridProperties", {})
         salida[sid] = _Meta(
             charts=charts,
             tiene_bandas=bool(hoja.get("bandedRanges")),
             reglas=len(hoja.get("conditionalFormats", [])),
-            columnas=int(grid.get("columnCount", 0)),
         )
     return salida
-
-
-def _ensanchar(sheet_id: int, meta: _Meta, columnas: int) -> list[dict[str, Any]]:
-    """Si el esquema creció desde la última corrida, agrega las columnas que falten."""
-    if not meta.columnas or meta.columnas >= columnas:
-        return []
-    return [estilo.agregar_columnas(sheet_id, columnas - meta.columnas)]
 
 
 def _diseno_mes(sheet_id: int, *, sin_bandas: bool, reglas_previas: int) -> list[dict[str, Any]]:
@@ -267,6 +275,34 @@ def _diseno_dashboard(sheet_id: int, meta: _Meta) -> list[dict[str, Any]]:
         estilo.color_pestana(sheet_id, estilo.TAB_DASHBOARD),
         *estilo.borrar_reglas_condicionales(sheet_id, meta.reglas),
         *estilo.reglas_dashboard(sheet_id),
+    ]
+    if not meta.tiene_bandas:
+        requests.append(estilo.bandas(sheet_id, len(cols)))
+    return requests
+
+
+def _diseno_recurrentes(sheet_id: int, meta: _Meta) -> list[dict[str, Any]]:
+    cols = schema.RECURRENTES_COLUMNAS
+    c = cols.index
+    requests: list[dict[str, Any]] = [
+        *estilo.encabezado(sheet_id, len(cols), congelar_columnas=1),
+        *estilo.anchos(sheet_id, cols, estilo.ANCHOS_RECURRENCIAS),
+        estilo.fuente_cuerpo(sheet_id, len(cols)),
+        estilo.formato_columna(sheet_id, c("fecha_inicio"), "DATE", "yyyy-mm-dd", "CENTER"),
+        estilo.formato_columna(sheet_id, c("proxima_fecha"), "DATE", "yyyy-mm-dd", "CENTER"),
+        estilo.formato_columna(sheet_id, c("monto"), "NUMBER", "#,##0.00"),
+        estilo.formato_columna(sheet_id, c("creado"), "DATE_TIME", "yyyy-mm-dd hh:mm", "CENTER"),
+        estilo.formato_columna(
+            sheet_id, c("fecha_modificacion"), "DATE_TIME", "yyyy-mm-dd hh:mm", "CENTER"
+        ),
+        estilo.validacion_lista(sheet_id, c("compartido"), ("sí", "no")),
+        estilo.validacion_lista(sheet_id, c("moneda"), ("UYU", "USD")),
+        estilo.validacion_lista(sheet_id, c("rubro"), schema.RUBROS),
+        estilo.validacion_lista(
+            sheet_id, c("frecuencia"), ("mensual", "trimestral", "semestral", "anual")
+        ),
+        estilo.validacion_lista(sheet_id, c("estado"), ("activa", "finalizada")),
+        estilo.color_pestana(sheet_id, estilo.TAB_RECURRENCIAS),
     ]
     if not meta.tiene_bandas:
         requests.append(estilo.bandas(sheet_id, len(cols)))
@@ -382,7 +418,14 @@ def asegurar_estructura(
     pendientes = _asegurar_pestana(
         sh, schema.TAB_PENDIENTES, schema.PENDIENTES_COLUMNAS, resultado, forzar_encabezado=forzar
     )
-    movimientos = asegurar_movimientos(sh, resultado)
+    recurrentes = _asegurar_pestana(
+        sh,
+        schema.TAB_RECURRENCIAS,
+        schema.RECURRENTES_COLUMNAS,
+        resultado,
+        forzar_encabezado=forzar,
+    )
+    movimientos = asegurar_movimientos(sh, resultado, forzar_encabezado=forzar)
 
     _sembrar_filas(
         config,
@@ -409,16 +452,16 @@ def asegurar_estructura(
     vacio = _Meta(charts={}, tiene_bandas=False, reglas=0)
     requests: list[dict[str, Any]] = _requests_orden_y_ocultas(sh)
     meta_dashboard = meta.get(dashboard.id, vacio)
-    requests += _ensanchar(dashboard.id, meta_dashboard, len(schema.DASHBOARD_COLUMNAS))
     requests += _diseno_dashboard(dashboard.id, meta_dashboard)
     for titulo, ws in _por_titulo(sh).items():
         if schema.es_pestana_de_mes(titulo) or titulo == schema.TAB_MOVIMIENTOS:
             # etiquetas al día
             _asegurar_pestana(sh, titulo, schema.MES_COLUMNAS, resultado, forzar_encabezado=forzar)
             m = meta.get(ws.id, vacio)
-            requests += _ensanchar(ws.id, m, len(schema.MES_COLUMNAS))
             requests += _diseno_mes(ws.id, sin_bandas=m.tiene_bandas, reglas_previas=m.reglas)
     _ = movimientos  # su diseño va con el de las pestañas de mes
+    meta_recurrentes = meta.get(recurrentes.id, vacio)
+    requests += _diseno_recurrentes(recurrentes.id, meta_recurrentes)
     simples = (
         (config, schema.CONFIG_COLUMNAS, estilo.ANCHOS_CONFIG),
         (categorias, schema.CATEGORIAS_COLUMNAS, estilo.ANCHOS_CATEGORIAS),
@@ -426,7 +469,6 @@ def asegurar_estructura(
     )
     for ws, columnas, anchos in simples:
         m = meta.get(ws.id, vacio)
-        requests += _ensanchar(ws.id, m, len(columnas))
         requests += _diseno_tabla_simple(ws.id, columnas, anchos, m)
     requests += _graficos(dashboard.id, meta.get(dashboard.id, vacio), resultado)
 

@@ -12,7 +12,7 @@ from typing import Any
 
 from gastos_bot.config import Settings
 from gastos_bot.domain.quincena import ahora_local
-from gastos_bot.jobs import fx_job, report_job
+from gastos_bot.jobs import fx_job, recurrentes_job, report_job
 from gastos_bot.jobs.base import Avisador, Resultado
 from gastos_bot.jobs.fx_job import URL_POR_DEFECTO, ErApiTC, FuenteTC
 from gastos_bot.storage.factory import Storage
@@ -45,6 +45,13 @@ class Jobs:
             avisador=self.avisador,
             ahora=self.ahora(),
             sheet_id=self.settings.google_sheet_id,
+        )
+
+    async def recurrentes(self) -> Resultado:
+        return await recurrentes_job.ejecutar(
+            storage=self.storage,
+            avisador=self.avisador,
+            ahora=self.ahora(),
         )
 
 

@@ -28,6 +28,7 @@ from tests.fakes import (
     FakeGastosRepo,
     FakeMensajero,
     FakePendientesRepo,
+    FakeRecurrentesRepo,
 )
 
 TC = Decimal("40")
@@ -94,6 +95,7 @@ async def _storage(config: Config, *gastos: Gasto) -> Storage:
         categorias=FakeCategoriasRepo(),
         gastos=repo,
         pendientes=FakePendientesRepo(),
+        recurrentes=FakeRecurrentesRepo(),
         drive=FakeDriveRepo(),
         dashboard=FakeDashboardRepo(),
     )

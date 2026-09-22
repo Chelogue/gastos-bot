@@ -16,6 +16,8 @@ from gastos_bot.domain.indicador import Indicador, ResumenMes
 from gastos_bot.domain.models import (
     Config,
     Estado,
+    EstadoRecurrencia,
+    FrecuenciaRecurrencia,
     Gasto,
     Ingreso,
     Moneda,
@@ -23,6 +25,7 @@ from gastos_bot.domain.models import (
     Persona,
     Porcentajes,
     Quincena,
+    Recurrencia,
     TipoCambio,
     TipoDoc,
 )
@@ -225,6 +228,7 @@ def gasto_a_fila(g: Gasto) -> list[Any]:
             if g.fecha_modificacion
             else ""
         ),
+        "recurrente_id": g.recurrente_id or "",
     }
     return [valores[c] for c in schema.MES_COLUMNAS]
 
@@ -253,6 +257,7 @@ def fila_a_gasto(fila: Sequence[Any]) -> Gasto:
         link_imagen=_campo(fila, c("link_imagen")) or None,
         estado=Estado(_campo(fila, c("estado")) or "activo"),
         fecha_modificacion=_fecha_hora(fm) if fm else None,
+        recurrente_id=_campo(fila, c("recurrente_id")) or None,
     )
 
 
@@ -288,6 +293,78 @@ def pendiente_a_fila(p: Pendiente) -> list[Any]:
 def fila_a_pendiente(fila: Sequence[Any]) -> Pendiente:
     c = schema.PENDIENTES_COLUMNAS.index
     return Pendiente.model_validate_json(_campo(fila, c("json_extraccion")))
+
+
+# ---------- Recurrentes ----------
+
+
+def recurrencia_a_fila(r: Recurrencia) -> list[Any]:
+    valores: dict[str, Any] = {
+        "id": r.id,
+        "gasto_origen_id": r.gasto_origen_id,
+        "telegram_id": r.telegram_id,
+        "fecha_inicio": r.fecha_inicio.isoformat(),
+        "proxima_fecha": r.proxima_fecha.isoformat(),
+        "dia_mes": r.dia_mes,
+        "frecuencia": r.frecuencia.value,
+        "quien_subio": r.quien_subio,
+        "compartido": SI if r.compartido else NO,
+        "comercio": r.comercio,
+        "monto": float(r.monto),
+        "moneda": r.moneda.value,
+        "rubro": r.rubro.value,
+        "subcategoria": r.subcategoria,
+        "medio_pago": r.medio_pago or "",
+        "nota": r.nota or "",
+        "estado": r.estado.value,
+        "creado": r.creado.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes"),
+        "fecha_modificacion": (
+            r.fecha_modificacion.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
+            if r.fecha_modificacion
+            else ""
+        ),
+        "ultimo_gasto_id": r.ultimo_gasto_id or "",
+    }
+    return [valores[c] for c in schema.RECURRENTES_COLUMNAS]
+
+
+def fila_a_recurrencia(fila: Sequence[Any]) -> Recurrencia:
+    c = schema.RECURRENTES_COLUMNAS.index
+    modificada = _campo(fila, c("fecha_modificacion"))
+    return Recurrencia(
+        id=_campo(fila, c("id")),
+        gasto_origen_id=_campo(fila, c("gasto_origen_id")),
+        telegram_id=int(_decimal(_numero(fila, c("telegram_id")))),
+        fecha_inicio=_fecha(_campo(fila, c("fecha_inicio"))),
+        proxima_fecha=_fecha(_campo(fila, c("proxima_fecha"))),
+        dia_mes=int(_decimal(_numero(fila, c("dia_mes")))),
+        frecuencia=FrecuenciaRecurrencia(_campo(fila, c("frecuencia"))),
+        quien_subio=_campo(fila, c("quien_subio")),
+        compartido=_bool(_campo(fila, c("compartido"))),
+        comercio=_campo(fila, c("comercio")),
+        monto=_decimal(_numero(fila, c("monto"))),
+        moneda=Moneda(_campo(fila, c("moneda"))),
+        rubro=Rubro(_campo(fila, c("rubro"))),
+        subcategoria=_campo(fila, c("subcategoria")),
+        medio_pago=_campo(fila, c("medio_pago")) or None,
+        nota=_campo(fila, c("nota")) or None,
+        estado=EstadoRecurrencia(_campo(fila, c("estado")) or EstadoRecurrencia.ACTIVA),
+        creado=_fecha_hora(_campo(fila, c("creado"))),
+        fecha_modificacion=_fecha_hora(modificada) if modificada else None,
+        ultimo_gasto_id=_campo(fila, c("ultimo_gasto_id")) or None,
+    )
+
+
+def filas_a_recurrencias(filas: Sequence[Sequence[Any]]) -> list[Recurrencia]:
+    salida: list[Recurrencia] = []
+    for fila in filas:
+        if not _campo(fila, 0):
+            continue
+        try:
+            salida.append(fila_a_recurrencia(fila))
+        except (ValueError, IndexError):
+            continue
+    return salida
 
 
 # ---------- Dashboard ----------

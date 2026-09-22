@@ -54,6 +54,27 @@ class Estado(StrEnum):
     ELIMINADO = "eliminado"
 
 
+class FrecuenciaRecurrencia(StrEnum):
+    MENSUAL = "mensual"
+    TRIMESTRAL = "trimestral"
+    SEMESTRAL = "semestral"
+    ANUAL = "anual"
+
+    @property
+    def meses(self) -> int:
+        return {
+            FrecuenciaRecurrencia.MENSUAL: 1,
+            FrecuenciaRecurrencia.TRIMESTRAL: 3,
+            FrecuenciaRecurrencia.SEMESTRAL: 6,
+            FrecuenciaRecurrencia.ANUAL: 12,
+        }[self]
+
+
+class EstadoRecurrencia(StrEnum):
+    ACTIVA = "activa"
+    FINALIZADA = "finalizada"
+
+
 class EstadoPendiente(StrEnum):
     """Ciclo de vida de un pendiente. Se guarda dentro de ``json_extraccion`` (ADR 0003)."""
 
@@ -164,6 +185,8 @@ class Pendiente(BaseModel):
     mensaje_tarjeta_id: int | None = None  # message_id de la tarjeta, para editarla
     gasto_id: str | None = None  # se completa al guardar; en /editar apunta a la fila a reescribir
     repetido_de: str | None = None  # ID del gasto que se está repitiendo (R23)
+    recurrente_id: str | None = None  # al editar una ocurrencia generada automáticamente
+    actualizar_recurrencia: bool = False  # ``este y los próximos``
 
     # Valores efectivos = extracción con las ediciones encima.
     @property
@@ -225,6 +248,34 @@ class Gasto(BaseModel):
     link_imagen: str | None = None
     estado: Estado = Estado.ACTIVO
     fecha_modificacion: datetime | None = None
+    recurrente_id: str | None = None
+
+
+class Recurrencia(BaseModel):
+    """Plantilla persistente que genera gastos en sus fechas de vencimiento."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: Annotated[str, Field(pattern=r"^R-\d{6}-\d{3,}$")]
+    gasto_origen_id: Annotated[str, Field(pattern=r"^G-\d{6}-\d{3,}$")]
+    telegram_id: int
+    fecha_inicio: date
+    proxima_fecha: date
+    dia_mes: Annotated[int, Field(ge=1, le=31)]
+    frecuencia: FrecuenciaRecurrencia
+    quien_subio: str
+    compartido: bool
+    comercio: str
+    monto: Monto
+    moneda: Moneda
+    rubro: Rubro
+    subcategoria: str
+    medio_pago: str | None = None
+    nota: str | None = None
+    estado: EstadoRecurrencia = EstadoRecurrencia.ACTIVA
+    creado: datetime
+    fecha_modificacion: datetime | None = None
+    ultimo_gasto_id: str | None = None
 
 
 class Ingreso(BaseModel):

@@ -16,6 +16,7 @@ from gastos_bot.domain.categorias import CATEGORIAS_INICIALES, Rubro
 
 TAB_DASHBOARD = "Dashboard"
 TAB_MOVIMIENTOS = "Movimientos"  # todas las pestañas de mes apiladas por fórmula (ADR 0011)
+TAB_RECURRENCIAS = "Recurrentes"
 TAB_CONFIG = "Config"
 TAB_CATEGORIAS = "Categorias"
 TAB_PENDIENTES = "Pendientes"
@@ -82,6 +83,30 @@ MES_COLUMNAS: tuple[str, ...] = (
     "link_imagen",
     "estado",
     "fecha_modificacion",
+    "recurrente_id",
+)
+
+RECURRENTES_COLUMNAS: tuple[str, ...] = (
+    "id",
+    "gasto_origen_id",
+    "telegram_id",
+    "fecha_inicio",
+    "proxima_fecha",
+    "dia_mes",
+    "frecuencia",
+    "quien_subio",
+    "compartido",
+    "comercio",
+    "monto",
+    "moneda",
+    "rubro",
+    "subcategoria",
+    "medio_pago",
+    "nota",
+    "estado",
+    "creado",
+    "fecha_modificacion",
+    "ultimo_gasto_id",
 )
 
 # Config es una tabla tipo/clave/valor (ADR 0002): una fila por dato, sin celdas "mágicas".

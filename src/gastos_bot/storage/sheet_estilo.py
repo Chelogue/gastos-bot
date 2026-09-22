@@ -23,6 +23,7 @@ ROJO_FONDO = {"red": 0.98, "green": 0.87, "blue": 0.87}
 ROJO_TEXTO = {"red": 0.72, "green": 0.11, "blue": 0.11}
 TAB_DASHBOARD = {"red": 0.118, "green": 0.227, "blue": 0.373}
 TAB_MES = {"red": 0.30, "green": 0.55, "blue": 0.35}
+TAB_RECURRENCIAS = {"red": 0.46, "green": 0.31, "blue": 0.64}
 TAB_OCULTA = {"red": 0.6, "green": 0.6, "blue": 0.6}
 
 # ---------- etiquetas ----------
@@ -76,6 +77,29 @@ ETIQUETAS_MES: dict[str, str] = {
     "link_imagen": "Imagen",
     "estado": "Estado",
     "fecha_modificacion": "Modificado",
+    "recurrente_id": "Recurrencia",
+}
+ETIQUETAS_RECURRENCIAS = {
+    "id": "ID recurrencia",
+    "gasto_origen_id": "Gasto de origen",
+    "telegram_id": "Creador",
+    "fecha_inicio": "Fecha de inicio",
+    "proxima_fecha": "Próxima fecha",
+    "dia_mes": "Día",
+    "frecuencia": "Frecuencia",
+    "quien_subio": "Responsable",
+    "compartido": "Compartido",
+    "comercio": "Comercio",
+    "monto": "Monto",
+    "moneda": "Moneda",
+    "rubro": "Rubro",
+    "subcategoria": "Categoría",
+    "medio_pago": "Medio de pago",
+    "nota": "Nota",
+    "estado": "Estado",
+    "creado": "Creada",
+    "fecha_modificacion": "Modificada",
+    "ultimo_gasto_id": "Último gasto",
 }
 ETIQUETAS_CONFIG = {
     "tipo": "Tipo",
@@ -101,6 +125,7 @@ ETIQUETAS_POR_TAB: dict[str, dict[str, str]] = {
     schema.TAB_CONFIG: ETIQUETAS_CONFIG,
     schema.TAB_CATEGORIAS: ETIQUETAS_CATEGORIAS,
     schema.TAB_PENDIENTES: ETIQUETAS_PENDIENTES,
+    schema.TAB_RECURRENCIAS: ETIQUETAS_RECURRENCIAS,
 }
 
 
@@ -136,6 +161,7 @@ ANCHOS_MES = {
     "link_imagen": 90,
     "estado": 85,
     "fecha_modificacion": 130,
+    "recurrente_id": 115,
 }
 ANCHOS_CONFIG = {
     "tipo": 90,
@@ -154,6 +180,28 @@ ANCHOS_PENDIENTES = {
     "file_id": 200,
     "creado": 170,
     "expira": 170,
+}
+ANCHOS_RECURRENCIAS = {
+    "id": 110,
+    "gasto_origen_id": 115,
+    "telegram_id": 110,
+    "fecha_inicio": 105,
+    "proxima_fecha": 105,
+    "dia_mes": 60,
+    "frecuencia": 95,
+    "quien_subio": 90,
+    "compartido": 90,
+    "comercio": 170,
+    "monto": 95,
+    "moneda": 70,
+    "rubro": 120,
+    "subcategoria": 160,
+    "medio_pago": 110,
+    "nota": 220,
+    "estado": 90,
+    "creado": 140,
+    "fecha_modificacion": 140,
+    "ultimo_gasto_id": 115,
 }
 
 # ---------- helpers de requests ----------
@@ -211,11 +259,6 @@ def encabezado(sheet_id: int, n_cols: int, congelar_columnas: int = 0) -> list[d
             }
         },
     ]
-
-
-def agregar_columnas(sheet_id: int, cuantas: int) -> dict[str, Any]:
-    """Ensancha la grilla cuando el esquema suma columnas (si no, Sheets rechaza el formato)."""
-    return {"appendDimension": {"sheetId": sheet_id, "dimension": "COLUMNS", "length": cuantas}}
 
 
 def anchos(

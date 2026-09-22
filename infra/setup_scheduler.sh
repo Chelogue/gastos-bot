@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Crea (o actualiza) los dos jobs de Cloud Scheduler de la Fase 2. Idempotente.
+# Crea (o actualiza) los tres jobs de Cloud Scheduler. Idempotente.
 #
 # Uso:  infra/setup_scheduler.sh <PROJECT_ID> [REGION]
 #       infra/setup_scheduler.sh gastos-bot-508217 us-central1
@@ -7,9 +7,10 @@
 # Qué crea, con qué permisos y qué cuesta:
 #   - gastos-bot-fx      → POST /jobs/fx      el día 1 a las 00:05 (R7)
 #   - gastos-bot-reporte → POST /jobs/reporte los días 1 y 16 a las 09:00 (R9)
-#     Ambos en zona America/Montevideo, con 3 reintentos si el servicio devuelve error.
-#   - Costo: el free tier de Cloud Scheduler son 3 jobs por cuenta de facturación; estos dos
-#     entran ahí, así que no suman nada. Los 3 disparos por mes a Cloud Run también son free tier.
+#   - gastos-bot-recurrentes → POST /jobs/recurrentes todos los días a las 09:10
+#     Los tres usan America/Montevideo y 3 reintentos si el servicio devuelve error.
+#   - Costo: el free tier de Cloud Scheduler son 3 jobs por cuenta de facturación; entran justo.
+#     Las pocas decenas de llamadas mensuales a Cloud Run también entran en su free tier.
 #   - Permisos: para crear un job que firme tokens OIDC con la service account del servicio hace
 #     falta actAs sobre ella (lo tiene el dueño del proyecto). La API cloudscheduler.googleapis.com
 #     ya la habilita infra/setup_gcp.sh.
@@ -57,6 +58,8 @@ ensure_job gastos-bot-fx "5 0 1 * *" /jobs/fx \
   "Fija el tipo de cambio del mes en Config (R7)"
 ensure_job gastos-bot-reporte "0 9 1,16 * *" /jobs/reporte \
   "Reporte quincenal a Marcelo y Nikole (R9)"
+ensure_job gastos-bot-recurrentes "10 9 * * *" /jobs/recurrentes \
+  "Registra los gastos recurrentes que vencen hoy y avisa por Telegram"
 
 say "Listo. Variables que el servicio tiene que tener:"
 echo "  JOBS_OIDC_EMAIL = $SA_RUN"

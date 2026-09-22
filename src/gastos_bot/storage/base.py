@@ -15,7 +15,7 @@ from typing import Protocol
 
 from gastos_bot.domain.categorias import Catalogo
 from gastos_bot.domain.indicador import Indicador, ResumenMes
-from gastos_bot.domain.models import Config, Gasto, Pendiente, TipoCambio
+from gastos_bot.domain.models import Config, Gasto, Pendiente, Recurrencia, TipoCambio
 
 
 class StorageError(Exception):
@@ -86,6 +86,18 @@ class PendientesRepo(Protocol):
         ...
 
     async def purgar_vencidos(self, ahora: datetime) -> int: ...
+
+
+class RecurrentesRepo(Protocol):
+    async def listar_activas(self) -> list[Recurrencia]: ...
+
+    async def obtener(self, recurrente_id: str) -> Recurrencia | None: ...
+
+    async def obtener_por_gasto_origen(self, gasto_id: str) -> Recurrencia | None: ...
+
+    async def guardar(self, recurrencia: Recurrencia) -> None:
+        """Inserta o reemplaza por ``id`` para que altas y reintentos sean idempotentes."""
+        ...
 
 
 @dataclass(frozen=True)

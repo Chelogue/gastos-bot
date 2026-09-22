@@ -43,6 +43,27 @@ ERROR_GUARDAR = (
     "tocá ✅ de nuevo o reenviá la foto."
 )
 EXPIRADO = "Ese pendiente expiró. Reenviá la foto y lo hacemos de nuevo."
+PREGUNTAR_RECURRENTE = "\n\n¿Este gasto es único o recurrente?"
+ELEGIR_FRECUENCIA = "¿Con qué frecuencia se repite este gasto?"
+GASTO_UNICO = "✅ {id} quedó registrado como gasto único."
+RECURRENCIA_CREADA = (
+    "🔁 Recurrencia creada para {comercio}: {frecuencia}. Próximo registro: {proxima}."
+)
+RECURRENCIA_SIGUE = "✅ Perfecto. La recurrencia {id} sigue sin cambios."
+RECURRENCIA_FINALIZADA = (
+    "⏹ Finalicé la recurrencia {id}. El gasto de este período queda registrado."
+)
+ELEGIR_ALCANCE_CAMBIO = "¿Dónde querés aplicar la modificación?"
+RECURRENCIA_NO_ENCONTRADA = "No encontré esa recurrencia activa."
+RECURRENCIA_SIN_GASTO = "No encontré el último gasto generado por esa recurrencia."
+RECURRENCIA_ACTUALIZADA = " También actualicé los próximos gastos de la recurrencia."
+ERROR_CREAR_RECURRENCIA = (
+    "El gasto quedó guardado, pero no pude crear la recurrencia ({motivo}). Podés reintentarlo."
+)
+RECURRENCIA_SIN_TC = (
+    "No pude registrar {comercio} ({id}) porque falta el tipo de cambio de {mes} en Config. "
+    "Lo voy a reintentar en la próxima ejecución."
+)
 DESCARTADO = "Descartado. No guardé nada."
 GUARDADO = "✅ Guardado como {id}\n{resumen}\n📎 {link}"
 GUARDADO_SIN_DASHBOARD = (
@@ -110,8 +131,19 @@ NO_ENTENDI_TEXTO = (
 )
 TOAST_FALTA = "Antes elegí {que}."
 TOAST_OK = "Listo."
+TOAST_RECURRENCIA = "Recurrencia actualizada."
 ELEGIR_CATEGORIA = "Elegí la categoría:"
 ELEGIR_MONEDA = "¿En qué moneda es?"
+
+
+def gasto_recurrente_registrado(gasto: Gasto, recurrente_id: str) -> str:
+    return (
+        "🔁 Registré el gasto recurrente de este período.\n"
+        f"{gasto_linea(gasto)}\n"
+        f"Recurrencia: {recurrente_id}\n\n"
+        "¿Sigue igual, cambió o ya no continúa?"
+    )
+
 
 _TIPO_DOC = {
     TipoDocExtraido.FACTURA: "factura",

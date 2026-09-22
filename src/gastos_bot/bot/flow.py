@@ -25,17 +25,21 @@ from gastos_bot.domain.models import (
     CampoEsperado,
     Estado,
     EstadoPendiente,
+    EstadoRecurrencia,
     Extraccion,
+    FrecuenciaRecurrencia,
     Gasto,
     Moneda,
     MonedaExtraida,
     Pendiente,
     Persona,
+    Recurrencia,
     TipoDoc,
     TipoDocExtraido,
 )
 from gastos_bot.domain.parseo import TextoInvalido, parsear_fecha, parsear_monto
 from gastos_bot.domain.quincena import a_local, mes_anterior, mes_de, quincena_de
+from gastos_bot.domain.recurrentes import primera_fecha_futura
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida, Extractor
 from gastos_bot.logging_setup import bind_context, get_logger
 from gastos_bot.reports import quincenal
@@ -398,6 +402,31 @@ class Flujo:
             if not await self.st.gastos.actualizar(actualizado):
                 await self.tg.enviar(chat_id, msg.GASTO_NO_ENCONTRADO.format(id=actualizado.id))
                 return None
+            if p.actualizar_recurrencia and p.recurrente_id:
+                recurrencia = await self.st.recurrentes.obtener(p.recurrente_id)
+                if recurrencia is None:
+                    await self.st.gastos.actualizar(original)
+                    await self.tg.enviar(chat_id, msg.RECURRENCIA_NO_ENCONTRADA)
+                    return None
+                try:
+                    await self.st.recurrentes.guardar(
+                        recurrencia.model_copy(
+                            update={
+                                "compartido": actualizado.compartido,
+                                "comercio": actualizado.comercio,
+                                "monto": actualizado.monto,
+                                "moneda": actualizado.moneda,
+                                "rubro": actualizado.rubro,
+                                "subcategoria": actualizado.subcategoria,
+                                "medio_pago": actualizado.medio_pago,
+                                "nota": actualizado.nota,
+                                "fecha_modificacion": a_local(self.reloj(), self.zona),
+                            }
+                        )
+                    )
+                except StorageError:
+                    await self.st.gastos.actualizar(original)
+                    raise
         except StorageError as exc:
             log.warning("edicion_fallida", motivo=str(exc))
             await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
@@ -407,7 +436,8 @@ class Flujo:
         await self.tg.editar(
             chat_id,
             p.mensaje_tarjeta_id or 0,
-            msg.EDITADO.format(id=actualizado.id, resumen=msg.gasto_linea(actualizado)),
+            msg.EDITADO.format(id=actualizado.id, resumen=msg.gasto_linea(actualizado))
+            + (msg.RECURRENCIA_ACTUALIZADA if p.actualizar_recurrencia else ""),
         )
         await self._recalcular_dashboard(mes, config, tc.valor)
         return msg.TOAST_OK
@@ -475,6 +505,18 @@ class Flujo:
                 return None
             if cb.accion in (kb.Accion.BORRAR_SI, kb.Accion.BORRAR_NO):
                 return await self._resolver_borrado(cb, chat_id, message_id)
+            if cb.accion in (kb.Accion.UNICO, kb.Accion.RECURRENTE, kb.Accion.FRECUENCIA):
+                return await self._resolver_tipo_registro(cb, persona, chat_id, message_id)
+            if cb.accion in (
+                kb.Accion.RECURRENTE_SIGUE,
+                kb.Accion.RECURRENTE_MODIFICAR,
+                kb.Accion.RECURRENTE_FINALIZAR,
+                kb.Accion.MODIFICAR_SOLO,
+                kb.Accion.MODIFICAR_PROXIMOS,
+            ):
+                return await self._resolver_seguimiento_recurrencia(
+                    cb, telegram_id, chat_id, message_id
+                )
             p = await self.st.pendientes.obtener(cb.pendiente_id)
             if p is None or p.telegram_id != telegram_id or p.estado is not EstadoPendiente.ABIERTO:
                 await self.tg.editar(chat_id, message_id, msg.EXPIRADO)
@@ -554,6 +596,154 @@ class Flujo:
                     await self._mostrar_resumen(p, chat_id)
                     return None
                 return await self._confirmar(p, persona, chat_id, forzar=True)
+        return None
+
+    async def _resolver_tipo_registro(
+        self, cb: kb.Callback, persona: Persona, chat_id: int, message_id: int
+    ) -> str | None:
+        gasto = await self._buscar_gasto(cb.pendiente_id, chat_id)
+        if gasto is None:
+            return None
+        if gasto.quien_subio != persona.nombre:
+            return None
+        if cb.accion is kb.Accion.UNICO:
+            await self.tg.editar(chat_id, message_id, msg.GASTO_UNICO.format(id=gasto.id))
+            return msg.TOAST_OK
+        if cb.accion is kb.Accion.RECURRENTE:
+            await self.tg.editar(
+                chat_id, message_id, msg.ELEGIR_FRECUENCIA, kb.frecuencias(gasto.id)
+            )
+            return None
+        try:
+            frecuencia = FrecuenciaRecurrencia(cb.valor or "")
+        except ValueError:
+            await self.tg.editar(
+                chat_id, message_id, msg.ELEGIR_FRECUENCIA, kb.frecuencias(gasto.id)
+            )
+            return None
+        try:
+            existente = await self.st.recurrentes.obtener_por_gasto_origen(gasto.id)
+        except StorageError as exc:
+            await self.tg.enviar(chat_id, msg.ERROR_CREAR_RECURRENCIA.format(motivo=exc))
+            return None
+        ahora = a_local(self.reloj(), self.zona)
+        proxima = primera_fecha_futura(gasto.fecha_gasto, frecuencia, ahora.date())
+        recurrencia = Recurrencia(
+            id=gasto.id.replace("G-", "R-", 1),
+            gasto_origen_id=gasto.id,
+            telegram_id=persona.telegram_id,
+            fecha_inicio=gasto.fecha_gasto,
+            proxima_fecha=proxima,
+            dia_mes=gasto.fecha_gasto.day,
+            frecuencia=frecuencia,
+            quien_subio=gasto.quien_subio,
+            compartido=gasto.compartido,
+            comercio=gasto.comercio,
+            monto=gasto.monto,
+            moneda=gasto.moneda,
+            rubro=gasto.rubro,
+            subcategoria=gasto.subcategoria,
+            medio_pago=gasto.medio_pago,
+            nota=gasto.nota,
+            creado=existente.creado if existente else ahora,
+            fecha_modificacion=ahora if existente else None,
+            ultimo_gasto_id=existente.ultimo_gasto_id if existente else None,
+        )
+        vinculado = gasto.model_copy(update={"recurrente_id": recurrencia.id})
+        try:
+            if not await self.st.gastos.actualizar(vinculado):
+                await self.tg.enviar(chat_id, msg.GASTO_NO_ENCONTRADO.format(id=gasto.id))
+                return None
+            await self.st.recurrentes.guardar(recurrencia)
+        except StorageError as exc:
+            try:
+                await self.st.gastos.actualizar(gasto)
+            except StorageError:
+                log.error("rollback_vinculo_recurrencia_fallo", gasto_id=gasto.id)
+            await self.tg.enviar(chat_id, msg.ERROR_CREAR_RECURRENCIA.format(motivo=exc))
+            return None
+        await self.tg.editar(
+            chat_id,
+            message_id,
+            msg.RECURRENCIA_CREADA.format(
+                comercio=gasto.comercio or gasto.subcategoria,
+                frecuencia=frecuencia.value,
+                proxima=f"{proxima:%d/%m/%Y}",
+            ),
+        )
+        return msg.TOAST_RECURRENCIA
+
+    async def _resolver_seguimiento_recurrencia(
+        self,
+        cb: kb.Callback,
+        telegram_id: int,
+        chat_id: int,
+        message_id: int,
+    ) -> str | None:
+        try:
+            recurrencia = await self.st.recurrentes.obtener(cb.pendiente_id)
+        except StorageError as exc:
+            await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+            return None
+        if (
+            recurrencia is None
+            or recurrencia.telegram_id != telegram_id
+            or recurrencia.estado is not EstadoRecurrencia.ACTIVA
+        ):
+            await self.tg.editar(chat_id, message_id, msg.RECURRENCIA_NO_ENCONTRADA)
+            return None
+        if cb.accion is kb.Accion.RECURRENTE_SIGUE:
+            await self.tg.editar(
+                chat_id, message_id, msg.RECURRENCIA_SIGUE.format(id=recurrencia.id)
+            )
+            return msg.TOAST_OK
+        if cb.accion is kb.Accion.RECURRENTE_FINALIZAR:
+            try:
+                await self.st.recurrentes.guardar(
+                    recurrencia.model_copy(
+                        update={
+                            "estado": EstadoRecurrencia.FINALIZADA,
+                            "fecha_modificacion": a_local(self.reloj(), self.zona),
+                        }
+                    )
+                )
+            except StorageError as exc:
+                await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+                return None
+            await self.tg.editar(
+                chat_id, message_id, msg.RECURRENCIA_FINALIZADA.format(id=recurrencia.id)
+            )
+            return msg.TOAST_RECURRENCIA
+        if cb.accion is kb.Accion.RECURRENTE_MODIFICAR:
+            await self.tg.editar(
+                chat_id,
+                message_id,
+                msg.ELEGIR_ALCANCE_CAMBIO,
+                kb.alcance_modificacion(recurrencia.id),
+            )
+            return None
+        if not recurrencia.ultimo_gasto_id:
+            await self.tg.editar(chat_id, message_id, msg.RECURRENCIA_SIN_GASTO)
+            return None
+        gasto = await self._buscar_gasto(recurrencia.ultimo_gasto_id, chat_id)
+        if gasto is None:
+            return None
+        ahora = self.reloj()
+        pendiente = Pendiente(
+            pendiente_id=f"e-{secrets.token_hex(4)}",
+            update_id=0,
+            telegram_id=telegram_id,
+            extraccion=_como_extraccion(gasto),
+            origen=gasto.tipo_doc,
+            compartido=gasto.compartido,
+            gasto_id=gasto.id,
+            recurrente_id=recurrencia.id,
+            actualizar_recurrencia=cb.accion is kb.Accion.MODIFICAR_PROXIMOS,
+            creado=ahora,
+            expira=ahora + self.ttl,
+            mensaje_tarjeta_id=message_id,
+        )
+        await self._mostrar_resumen(pendiente, chat_id)
         return None
 
     async def _pedir(self, p: Pendiente, chat_id: int, campo: CampoEsperado) -> None:
@@ -684,7 +874,12 @@ class Flujo:
             resumen=msg.resumen_guardado(p, rubro.value),
             link=gasto.link_imagen or "sin imagen",
         )
-        await self.tg.editar(chat_id, p.mensaje_tarjeta_id or 0, texto)
+        await self.tg.editar(
+            chat_id,
+            p.mensaje_tarjeta_id or 0,
+            texto + msg.PREGUNTAR_RECURRENTE,
+            kb.tipo_registro(gasto.id),
+        )
         log.info("gasto_guardado", gasto_id=gasto.id, mes=mes)
         return msg.TOAST_OK
 

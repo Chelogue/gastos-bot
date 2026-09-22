@@ -8,12 +8,14 @@ from gastos_bot.domain.indicador import Cumplimiento, calcular
 from gastos_bot.domain.models import (
     EstadoPendiente,
     Extraccion,
+    FrecuenciaRecurrencia,
     Gasto,
     Moneda,
     MonedaExtraida,
     Pendiente,
     Porcentajes,
     Quincena,
+    Recurrencia,
     TipoCambio,
     TipoDoc,
     TipoDocExtraido,
@@ -24,12 +26,14 @@ from gastos_bot.storage.serializacion import (
     fila_a_pendiente,
     fila_tc,
     filas_a_gastos,
+    filas_a_recurrencias,
     filas_a_resumenes,
     gasto_a_fila,
     indicador_a_fila,
     parsear_config,
     pendiente_a_fila,
     reconvertir_filas,
+    recurrencia_a_fila,
 )
 
 AHORA = datetime(2026, 9, 10, 15, 30, tzinfo=UTC)
@@ -95,6 +99,30 @@ def test_gasto_ida_y_vuelta() -> None:
     assert fila[schema.MES_COLUMNAS.index("monto")] == 1250.5
     (g,) = filas_a_gastos([[str(v) for v in fila]])
     assert g == _gasto().model_copy(update={"fecha_envio": AHORA.replace(tzinfo=None)})
+
+
+def test_recurrencia_ida_y_vuelta() -> None:
+    recurrencia = Recurrencia(
+        id="R-260910-001",
+        gasto_origen_id="G-260910-001",
+        telegram_id=111,
+        fecha_inicio=date(2026, 9, 10),
+        proxima_fecha=date(2026, 10, 10),
+        dia_mes=10,
+        frecuencia=FrecuenciaRecurrencia.MENSUAL,
+        quien_subio="Marcelo",
+        compartido=True,
+        comercio="Alquiler",
+        monto=Decimal("45000"),
+        moneda=Moneda.UYU,
+        rubro=Rubro.NECESIDADES,
+        subcategoria="Vivienda",
+        creado=AHORA,
+    )
+    fila = recurrencia_a_fila(recurrencia)
+    assert len(fila) == len(schema.RECURRENTES_COLUMNAS)
+    (leida,) = filas_a_recurrencias([fila])
+    assert leida == recurrencia.model_copy(update={"creado": AHORA.replace(tzinfo=None)})
 
 
 def test_filas_rotas_se_saltan() -> None:

@@ -21,6 +21,7 @@ from gastos_bot.domain.models import (
     Extraccion,
     Gasto,
     Pendiente,
+    Recurrencia,
     TipoCambio,
 )
 from gastos_bot.domain.quincena import mes_de
@@ -148,6 +149,9 @@ class FakeWorksheet:
 
     def insert_row(self, values: list[Any], index: int, value_input_option: str = "RAW") -> None:
         self.values.insert(index - 1, [str(v) for v in values])
+
+    def add_cols(self, cols: int) -> None:
+        self.cols += cols
 
 
 _REQUESTS_IGNORADOS = (
@@ -424,6 +428,26 @@ class FakePendientesRepo:
         return len(vencidos)
 
 
+class FakeRecurrentesRepo:
+    def __init__(self) -> None:
+        self.recurrentes: dict[str, Recurrencia] = {}
+
+    async def listar_activas(self) -> list[Recurrencia]:
+        from gastos_bot.domain.models import EstadoRecurrencia
+
+        return [r for r in self.recurrentes.values() if r.estado is EstadoRecurrencia.ACTIVA]
+
+    async def obtener(self, recurrente_id: str) -> Recurrencia | None:
+        return self.recurrentes.get(recurrente_id.strip().upper())
+
+    async def obtener_por_gasto_origen(self, gasto_id: str) -> Recurrencia | None:
+        gid = gasto_id.strip().upper()
+        return next((r for r in self.recurrentes.values() if r.gasto_origen_id == gid), None)
+
+    async def guardar(self, recurrencia: Recurrencia) -> None:
+        self.recurrentes[recurrencia.id] = recurrencia
+
+
 class FakeDriveRepo:
     def __init__(self) -> None:
         self.archivos: dict[str, tuple[tuple[str, ...], str, bytes]] = {}
@@ -540,6 +564,7 @@ def flujo_factory_falso(*respuestas: Extraccion | Exception, config: Config | No
         categorias=FakeCategoriasRepo(),
         gastos=FakeGastosRepo(),
         pendientes=FakePendientesRepo(),
+        recurrentes=FakeRecurrentesRepo(),
         drive=FakeDriveRepo(),
         dashboard=FakeDashboardRepo(),
     )

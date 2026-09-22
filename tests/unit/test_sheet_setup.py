@@ -27,6 +27,7 @@ def test_crea_todo_desde_cero_en_el_orden_del_prd() -> None:
         "Dashboard",
         "2026-09",
         "Movimientos",
+        "Recurrentes",
         "Config",
         "Categorias",
         "Pendientes",
@@ -35,6 +36,7 @@ def test_crea_todo_desde_cero_en_el_orden_del_prd() -> None:
         "Dashboard",
         "2026-09",
         "Movimientos",
+        "Recurrentes",
         "Config",
         "Categorias",
         "Pendientes",
@@ -75,6 +77,7 @@ def test_segunda_corrida_no_cambia_nada() -> None:
         "Dashboard",
         "2026-09",
         "Movimientos",
+        "Recurrentes",
         "Config",
         "Categorias",
         "Pendientes",
@@ -126,6 +129,7 @@ def test_pestana_de_mes_existente_recibe_etiquetas() -> None:
     ws.update(values=[list(schema.MES_COLUMNAS)], range_name="A1")
     asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
     assert ws.row_values(1)[:4] == ["ID", "Fecha gasto", "Enviado", "Quién"]
+    assert ws.cols == len(schema.MES_COLUMNAS)  # crece antes de escribir la columna nueva
 
 
 def test_encabezado_con_claves_tecnicas_se_actualiza_a_etiquetas() -> None:
@@ -205,6 +209,20 @@ def test_forzar_encabezados_migra_una_fila_1_vieja() -> None:
     assert dashboard.row_values(1) == list(estilo.etiquetas("Dashboard", schema.DASHBOARD_COLUMNAS))
 
 
+def test_forzar_encabezados_migra_movimientos_sin_aviso_falso() -> None:
+    sh = FakeSpreadsheet()
+    asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
+    movimientos = next(ws for ws in sh.worksheets() if ws.title == "Movimientos")
+    movimientos.values[0] = movimientos.values[0][:-1]
+    movimientos.cols -= 1
+
+    resultado = asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY, forzar_encabezados=True)
+
+    assert resultado.avisos == []
+    assert movimientos.row_values(1) == list(estilo.etiquetas("Movimientos", schema.MES_COLUMNAS))
+    assert movimientos.cols == len(schema.MES_COLUMNAS)
+
+
 def test_movimientos_apila_todas_las_pestanas_de_mes() -> None:
     sh = FakeSpreadsheet()
     asegurar_estructura(sh, telegram_ids=IDS, hoy=HOY)
@@ -214,7 +232,7 @@ def test_movimientos_apila_todas_las_pestanas_de_mes() -> None:
 
     asegurar_pestana_mes(sh, "2026-10")  # al abrir un mes nuevo se reescribe sola
     assert ws.get_all_values()[1][0] == schema.formula_movimientos(["2026-09", "2026-10"])
-    assert "'2026-10'!A2:T" in ws.get_all_values()[1][0]
+    assert "'2026-10'!A2:U" in ws.get_all_values()[1][0]
 
 
 def test_la_formula_de_movimientos_cae_al_otro_separador() -> None:

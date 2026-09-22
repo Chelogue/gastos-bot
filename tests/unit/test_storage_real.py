@@ -15,12 +15,14 @@ from gastos_bot.domain.models import (
     Estado,
     EstadoPendiente,
     Extraccion,
+    FrecuenciaRecurrencia,
     Gasto,
     Moneda,
     Pendiente,
     Persona,
     Porcentajes,
     Quincena,
+    Recurrencia,
     TipoCambio,
     TipoDoc,
     TipoDocExtraido,
@@ -29,6 +31,7 @@ from gastos_bot.storage.base import ArchivoSubido, StorageError
 from gastos_bot.storage.dashboard import SheetsDashboardRepo
 from gastos_bot.storage.drive import GoogleDriveRepo
 from gastos_bot.storage.pendientes import SheetsPendientesRepo
+from gastos_bot.storage.recurrentes import SheetsRecurrentesRepo
 from gastos_bot.storage.sheet_setup import asegurar_estructura
 from gastos_bot.storage.sheets import (
     Cache,
@@ -87,6 +90,33 @@ async def test_config_y_categorias_con_cache(cliente: SheetsCliente) -> None:
 
     cat = await SheetsCategoriasRepo(cliente).catalogo()
     assert len(cat.nombres_activos()) == 18
+
+
+async def test_recurrentes_inserta_actualiza_y_busca(cliente: SheetsCliente) -> None:
+    repo = SheetsRecurrentesRepo(cliente)
+    recurrencia = Recurrencia(
+        id="R-260910-001",
+        gasto_origen_id="G-260910-001",
+        telegram_id=111,
+        fecha_inicio=HOY,
+        proxima_fecha=date(2026, 10, 10),
+        dia_mes=10,
+        frecuencia=FrecuenciaRecurrencia.MENSUAL,
+        quien_subio="Marcelo",
+        compartido=True,
+        comercio="Alquiler",
+        monto=Decimal("45000"),
+        moneda=Moneda.UYU,
+        rubro=Rubro.NECESIDADES,
+        subcategoria="Vivienda",
+        creado=AHORA,
+    )
+    await repo.guardar(recurrencia)
+    assert await repo.obtener_por_gasto_origen("G-260910-001") is not None
+    await repo.guardar(recurrencia.model_copy(update={"monto": Decimal("46000")}))
+    (actualizada,) = await repo.listar_activas()
+    assert actualizada.monto == Decimal("46000")
+    assert len(cliente.hoja_o_error("Recurrentes").get_all_values()) == 2
 
 
 async def test_gastos_crea_pestana_y_lista(cliente: SheetsCliente) -> None:
@@ -337,5 +367,5 @@ async def test_listar_anteriores_lee_los_meses_previos_de_una_vez(cliente: Sheet
     assert [g.id for g in anteriores] == ["G-260710-001", "G-260810-001", "G-260810-002"]
     assert anteriores[0].monto_usd == Decimal("31.25")
     ((rangos, params),) = cliente.sh.lecturas_por_lote  # una sola llamada para todos los meses
-    assert rangos == ["'2026-07'!A2:T", "'2026-08'!A2:T"]
+    assert rangos == ["'2026-07'!A2:U", "'2026-08'!A2:U"]
     assert params["valueRenderOption"] == "UNFORMATTED_VALUE"

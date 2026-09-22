@@ -28,6 +28,10 @@ class JobsFalsos:
         self.llamadas.append("reporte")
         return Resultado("reporte", False, {"motivo": "sin_tc"}, (111,))
 
+    async def recurrentes(self) -> Resultado:
+        self.llamadas.append("recurrentes")
+        return Resultado("recurrentes", True, {"creados": 1}, (111,))
+
 
 @pytest.fixture
 def jobs() -> JobsFalsos:
@@ -54,6 +58,7 @@ def test_sin_credencial_es_403(settings_con_oidc: Settings, jobs: JobsFalsos) ->
     cliente = _client(settings_con_oidc, jobs)
     assert cliente.post("/jobs/fx").status_code == 403
     assert cliente.post("/jobs/reporte").status_code == 403
+    assert cliente.post("/jobs/recurrentes").status_code == 403
     assert jobs.llamadas == []
 
 
@@ -79,6 +84,13 @@ def test_oidc_valido_de_la_cuenta_esperada(settings_con_oidc: Settings, jobs: Jo
     assert r.status_code == 200
     assert r.json()["ok"] is False and r.json()["motivo"] == "sin_tc"
     assert vistos == [("tok-123", "https://bot")]
+
+
+def test_endpoint_recurrentes(settings_con_oidc: Settings, jobs: JobsFalsos) -> None:
+    cliente = _client(settings_con_oidc, jobs)
+    r = cliente.post("/jobs/recurrentes", headers={TELEGRAM_SECRET_HEADER: WEBHOOK_SECRET})
+    assert r.status_code == 200
+    assert r.json() == {"job": "recurrentes", "ok": True, "avisados": 1, "creados": 1}
 
 
 @pytest.mark.parametrize(

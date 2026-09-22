@@ -28,7 +28,8 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** ninguna: fases 0 a 4 desplegadas. El 2026-09-12 se sumó el objetivo de ahorro
+**Fase en curso:** fase 5, recurrencias automáticas (R25) implementada en la rama de desarrollo.
+Las fases 0 a 4 están desplegadas. El 2026-09-12 se sumó el objetivo de ahorro
 e inversión (ADR 0010), la pestaña `Movimientos` para tableros (ADR 0011) y se arregló un bug que
 descartaba en silencio toda fila de mil o más al leer el Sheet (es_MX formatea «1,167.50»). El
 2026-09-16 se sumó el rubro Emprendimientos (ADR 0012): tope propio del 15 %, fuera del 50/30/20 y

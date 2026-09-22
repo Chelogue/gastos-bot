@@ -118,6 +118,7 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
 | R22 | `/reporte` a demanda (quincena actual, anterior o mes) |
 | R23 | Gastos recurrentes (alquiler, suscripciones) creados por comando sin foto |
 | R24 | `/dashboard` que devuelve la tabla mensual resumida en el chat |
+| R25 | Al guardar, preguntar único/recurrente; periodicidad mensual, trimestral, semestral o anual; generación automática en la fecha correspondiente; aviso al creador con acciones para mantener, modificar o finalizar |
 
 ### P2 — No en v1, el diseño no debe impedirlos
 
@@ -133,10 +134,11 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
                                             │         │          │
                                             │         │          └──> [LLM multimodal]   JSON validado
                                             │         └─────────────> [Google Drive API] Gastos/YYYY-MM/<Nombre>/
-                                            └───────────────────────> [Google Sheets API] Dashboard · YYYY-MM · Config · Categorias · Pendientes
+                                            └───────────────────────> [Google Sheets API] Dashboard · YYYY-MM · Recurrentes · Config · Categorias · Pendientes
 
 [Cloud Scheduler] --día 1 00:05 UYT, OIDC--> /jobs/fx
 [Cloud Scheduler] --1 y 16 09:00 UYT, OIDC--> /jobs/reporte
+[Cloud Scheduler] --todos los días 09:10 UYT, OIDC--> /jobs/recurrentes
 [Secret Manager] --> TELEGRAM_TOKEN, TELEGRAM_SECRET, LLM_API_KEY, SA credentials (o SA nativa de Cloud Run)
 [GitHub] --push main--> [GitHub Actions + Workload Identity] --> [Artifact Registry] --> [Cloud Run]
 ```
@@ -152,7 +154,7 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
 
 ## 9. Google Sheet
 
-Orden de pestañas: `Dashboard` · `2026-09` · `2026-10` · … · `Config` · `Categorias` · `Pendientes` (las tres últimas ocultas por defecto).
+Orden de pestañas: `Dashboard` · `2026-09` · `2026-10` · … · `Movimientos` · `Recurrentes` · `Config` · `Categorias` · `Pendientes` (las tres últimas ocultas por defecto).
 
 **`Dashboard`** — tabla mantenida por el bot, una fila por mes:
 
@@ -197,6 +199,12 @@ Debajo de la tabla: gráficos nativos de Sheets (creados por el script de planti
 | `link_imagen` | URL | |
 | `estado` | activo / eliminado | |
 | `fecha_modificacion` | fecha-hora | |
+| `recurrente_id` | texto | Plantilla que originó el movimiento; vacío para gastos únicos |
+
+**`Recurrentes`:** una fila por plantilla, con gasto de origen, creador de Telegram, fecha inicial,
+próxima fecha, día ancla, frecuencia, responsable, marca compartido/personal, comercio, monto,
+moneda, rubro, subcategoría, medio de pago, nota, estado y último gasto generado. Es visible y se
+puede auditar, pero el bot mantiene sus fechas e IDs.
 
 **`Config`:** `telegram_id` ↔ `nombre`; `ingreso` por persona con `moneda` y `vigente_desde`; `tc_uyu_usd` con `fecha`; `zona_horaria`; `hora_reporte`; `pct_necesidades / deseos / ahorro / emprendimientos`; IDs de carpetas de Drive cacheados.
 **`Categorias`:** `subcategoria`, `rubro`, `activa`.
@@ -235,5 +243,8 @@ Debajo de la tabla: gráficos nativos de Sheets (creados por el script de planti
 **Fase 3 — Consulta y corrección (R11–R13).** Texto, `/total`, `/ultimos`, editar/borrar.
 
 **Fase 4 — Pulido (P1).**
+
+**Fase 5 — Recurrencias automáticas (R25).** Plantillas en Sheets, generación diaria idempotente,
+notificación y mantenimiento desde Telegram.
 
 Usar la Fase 1 dos semanas con datos reales antes de construir la Fase 2, para que el indicador nazca sobre categorías ya ajustadas.
