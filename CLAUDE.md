@@ -28,7 +28,7 @@ es ambiguo, pregunta antes de decidir.
 ## Estado
 Ver docs/PRD.md §13 (fases). Marcar aquí la fase en curso y los requerimientos cerrados.
 
-**Fase en curso:** fase 5, recurrencias automáticas (R25) implementada en la rama de desarrollo.
+**Fase en curso:** fase 6, registro múltiple desde una captura (R26) en desarrollo.
 Las fases 0 a 4 están desplegadas. El 2026-09-12 se sumó el objetivo de ahorro
 e inversión (ADR 0010), la pestaña `Movimientos` para tableros (ADR 0011) y se arregló un bug que
 descartaba en silencio toda fila de mil o más al leer el Sheet (es_MX formatea «1,167.50»). El
@@ -47,5 +47,6 @@ token OIDC de `gastos-bot-sa`, que el servicio verifica contra `JOBS_OIDC_EMAIL`
 **Requerimientos cerrados:** R1–R6, R14–R18 (validados de punta a punta con fotos reales el
 2026-09-10). R7, R8, R10 y la autorización OIDC de los jobs: en producción y verificados.
 R9: salió solo el 2026-09-16 a las 09:00 (Cloud Scheduler → `reporte_enviado`). R11, R12, R13: desplegados; `/total` y `/ultimos` verificados en producción, `/editar`
-y `/borrar` cubiertos por tests. R20–R24 (P1): desplegados; `/dashboard` verificado en producción. R19: único requerimiento
+y `/borrar` cubiertos por tests. R20–R25 (P1): desplegados y verificados en producción. R26 está
+en desarrollo. R19: único requerimiento
 abierto, el script está listo y faltan los 30 comprobantes.

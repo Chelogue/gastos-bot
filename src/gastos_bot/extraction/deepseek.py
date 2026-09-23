@@ -15,8 +15,12 @@ import httpx
 
 from gastos_bot.domain.models import Extraccion
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida
-from gastos_bot.extraction.prompts import INSTRUCCIONES, prompt_extraccion
-from gastos_bot.extraction.schema import parsear_respuesta
+from gastos_bot.extraction.prompts import (
+    INSTRUCCIONES,
+    prompt_extraccion,
+    prompt_extraccion_multiple,
+)
+from gastos_bot.extraction.schema import parsear_respuesta, parsear_respuesta_multiple
 from gastos_bot.logging_setup import get_logger
 
 log = get_logger("gastos_bot.extraction.deepseek")
@@ -79,3 +83,50 @@ class DeepSeekExtractor:
                 "DeepSeek devolvió un cuerpo inesperado", reintentable=False
             ) from exc
         return parsear_respuesta(texto, categorias)
+
+    async def extraer_multiples(
+        self, entrada: Entrada, categorias: Sequence[str]
+    ) -> tuple[Extraccion, ...]:
+        if not entrada.es_imagen:
+            return (await self.extraer(entrada, categorias),)
+        assert entrada.imagen is not None
+        data_uri = (
+            f"data:{entrada.mime};base64," + base64.standard_b64encode(entrada.imagen).decode()
+        )
+        mensajes = [
+            {"role": "system", "content": INSTRUCCIONES},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": data_uri}},
+                    {
+                        "type": "text",
+                        "text": prompt_extraccion_multiple(categorias, entrada.fecha_referencia),
+                    },
+                ],
+            },
+        ]
+        cuerpo = {
+            "model": self.modelo,
+            "messages": mensajes,
+            "response_format": {"type": "json_object"},
+            "temperature": 0,
+        }
+        try:
+            r = await self._client.post("/chat/completions", json=cuerpo)
+        except httpx.HTTPError as exc:
+            log.warning("deepseek_error", error=type(exc).__name__)
+            raise ExtraccionFallida(f"DeepSeek no respondió: {type(exc).__name__}") from exc
+        if r.status_code >= 500 or r.status_code == 429:
+            raise ExtraccionFallida(f"DeepSeek devolvió {r.status_code}")
+        if r.status_code >= 400:
+            raise ExtraccionFallida(
+                f"DeepSeek rechazó el pedido ({r.status_code})", reintentable=False
+            )
+        try:
+            texto = r.json()["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ExtraccionFallida(
+                "DeepSeek devolvió un cuerpo inesperado", reintentable=False
+            ) from exc
+        return parsear_respuesta_multiple(texto, categorias)

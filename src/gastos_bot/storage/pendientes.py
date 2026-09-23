@@ -61,6 +61,13 @@ class SheetsPendientesRepo:
 
         return await en_hilo(leer)
 
+    async def listar_lote(self, lote_id: str) -> list[Pendiente]:
+        def leer() -> list[Pendiente]:
+            encontrados = [p for _, p in self._todos() if p.lote_id == lote_id]
+            return sorted(encontrados, key=lambda p: p.lote_indice or 0)
+
+        return await en_hilo(leer)
+
     async def esperando_respuesta(self, telegram_id: int) -> Pendiente | None:
         def leer() -> Pendiente | None:
             candidatos = [

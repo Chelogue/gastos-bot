@@ -16,6 +16,7 @@ from gastos_bot.domain.models import Extraccion, MonedaExtraida, TipoDocExtraido
 from gastos_bot.extraction.base import ExtraccionFallida
 
 UMBRAL_CONFIANZA_MONEDA = 0.7  # por debajo, moneda = ambigua y la tarjeta pregunta (R2, R3)
+MAX_GASTOS_POR_IMAGEN = 10
 
 SCHEMA_EXTRACCION: dict[str, Any] = {
     "type": "object",
@@ -51,6 +52,20 @@ SCHEMA_EXTRACCION: dict[str, Any] = {
         },
     },
     "required": ["tipo_doc", "confianza"],
+}
+
+SCHEMA_EXTRACCION_MULTIPLE: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "gastos": {
+            "type": "array",
+            "description": "Movimientos independientes visibles, en el orden de la imagen",
+            "items": SCHEMA_EXTRACCION,
+            "minItems": 1,
+            "maxItems": MAX_GASTOS_POR_IMAGEN,
+        }
+    },
+    "required": ["gastos"],
 }
 
 _CAMPOS_TEXTO = (
@@ -114,6 +129,27 @@ def parsear_respuesta(texto: str, categorias: Sequence[str]) -> Extraccion:
         ) from exc
 
 
+def parsear_respuesta_multiple(texto: str, categorias: Sequence[str]) -> tuple[Extraccion, ...]:
+    """JSON del modelo → entre 1 y 10 movimientos independientes."""
+    cuerpo = texto.strip()
+    if cuerpo.startswith("```"):
+        cuerpo = cuerpo.strip("`")
+        cuerpo = cuerpo[4:] if cuerpo.lower().startswith("json") else cuerpo
+    try:
+        datos = json.loads(cuerpo)
+    except json.JSONDecodeError as exc:
+        raise ExtraccionFallida(f"respuesta no es JSON: {exc.msg}") from exc
+    gastos = datos.get("gastos") if isinstance(datos, dict) else None
+    if not isinstance(gastos, list):
+        raise ExtraccionFallida("respuesta múltiple no contiene una lista de gastos")
+    if not 1 <= len(gastos) <= MAX_GASTOS_POR_IMAGEN:
+        raise ExtraccionFallida(f"la imagen debe contener entre 1 y {MAX_GASTOS_POR_IMAGEN} gastos")
+    try:
+        return tuple(Extraccion.model_validate(_limpiar(g, categorias)) for g in gastos)
+    except (ValidationError, TypeError, ValueError, AttributeError) as exc:
+        raise ExtraccionFallida("uno de los gastos extraídos no cumple el esquema") from exc
+
+
 def schema_estricto() -> dict[str, Any]:
     """Variante para salida estructurada estricta (Claude): todos los campos requeridos,
     opcionales como nullable y sin propiedades extra. Semánticamente igual a SCHEMA_EXTRACCION."""
@@ -127,4 +163,14 @@ def schema_estricto() -> dict[str, Any]:
     schema["required"] = list(props)
     schema["additionalProperties"] = False
     props["confianza"]["additionalProperties"] = False
+    return schema
+
+
+def schema_multiple_estricto() -> dict[str, Any]:
+    """Wrapper estricto para Claude: ``{\"gastos\": [...]}``."""
+    import copy
+
+    schema = copy.deepcopy(SCHEMA_EXTRACCION_MULTIPLE)
+    schema["additionalProperties"] = False
+    schema["properties"]["gastos"]["items"] = schema_estricto()
     return schema

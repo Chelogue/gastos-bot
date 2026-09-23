@@ -138,25 +138,59 @@ class Flujo:
             try:
                 imagen = await self.tg.descargar(file_id)
                 catalogo = await self.st.categorias.catalogo()
-                extraccion = await self.extractor.extraer(
-                    Entrada(imagen=imagen, mime=mime, caption=caption), catalogo.nombres_activos()
+                extracciones = await self.extractor.extraer_multiples(
+                    Entrada(
+                        imagen=imagen,
+                        mime=mime,
+                        caption=caption,
+                        fecha_referencia=a_local(ahora, self.zona).date(),
+                    ),
+                    catalogo.nombres_activos(),
                 )
             except ExtraccionFallida as exc:
                 log.warning("extraccion_fallida", motivo=str(exc))
                 await self.tg.enviar(chat_id, msg.ERROR_EXTRACCION.format(motivo=exc))
                 return
-            pendiente = Pendiente(
-                pendiente_id=f"p-{secrets.token_hex(4)}",
+            comprobantes = tuple(e for e in extracciones if e.es_comprobante)
+            if not comprobantes:
+                rechazado = Pendiente(
+                    pendiente_id=f"p-{secrets.token_hex(4)}",
+                    update_id=update_id,
+                    telegram_id=telegram_id,
+                    extraccion=extracciones[0],
+                    file_id=file_id,
+                    mime=mime,
+                    creado=ahora,
+                    expira=ahora + self.ttl,
+                    estado=EstadoPendiente.RECHAZADO,
+                )
+                await self.st.pendientes.guardar(rechazado)
+                await self.tg.enviar(chat_id, msg.NO_COMPROBANTE)
+                return
+            if len(comprobantes) == 1:
+                pendiente = Pendiente(
+                    pendiente_id=f"p-{secrets.token_hex(4)}",
+                    update_id=update_id,
+                    telegram_id=telegram_id,
+                    extraccion=comprobantes[0],
+                    file_id=file_id,
+                    mime=mime,
+                    nota_caption=caption.strip() if caption else None,
+                    creado=ahora,
+                    expira=ahora + self.ttl,
+                )
+                await self._abrir_tarjeta(pendiente, chat_id, msg.NO_COMPROBANTE)
+                return
+            await self._abrir_lote(
+                comprobantes,
                 update_id=update_id,
                 telegram_id=telegram_id,
-                extraccion=extraccion,
+                chat_id=chat_id,
                 file_id=file_id,
                 mime=mime,
-                nota_caption=caption.strip() if caption else None,
-                creado=ahora,
-                expira=ahora + self.ttl,
+                caption=caption,
+                ahora=ahora,
             )
-            await self._abrir_tarjeta(pendiente, chat_id, msg.NO_COMPROBANTE)
 
     async def procesar_texto(
         self, *, update_id: int, telegram_id: int, chat_id: int, texto: str
@@ -218,12 +252,51 @@ class Flujo:
             await self.tg.enviar(chat_id, rechazo)
             return
         message_id = await self.tg.enviar(
-            chat_id, msg.paso_1(pendiente), kb.paso_compartido(pendiente.pendiente_id)
+            chat_id,
+            msg.paso_1(pendiente),
+            kb.paso_compartido(pendiente.pendiente_id, es_lote=pendiente.es_lote),
         )
         await self.st.pendientes.guardar(
             pendiente.model_copy(update={"mensaje_tarjeta_id": message_id})
         )
         log.info("pendiente_creado", pendiente_id=pendiente.pendiente_id, origen=pendiente.origen)
+
+    async def _abrir_lote(
+        self,
+        extracciones: tuple[Extraccion, ...],
+        *,
+        update_id: int,
+        telegram_id: int,
+        chat_id: int,
+        file_id: str,
+        mime: str,
+        caption: str | None,
+        ahora: datetime,
+    ) -> None:
+        lote_id = f"l-{secrets.token_hex(4)}"
+        total = len(extracciones)
+        pendientes = [
+            Pendiente(
+                pendiente_id=f"p-{secrets.token_hex(4)}",
+                update_id=update_id,
+                telegram_id=telegram_id,
+                extraccion=extraccion,
+                file_id=file_id,
+                mime=mime,
+                nota_caption=caption.strip() if caption else None,
+                creado=ahora + timedelta(microseconds=indice),
+                expira=ahora + self.ttl,
+                lote_id=lote_id,
+                lote_indice=indice,
+                lote_total=total,
+            )
+            for indice, extraccion in enumerate(extracciones, start=1)
+        ]
+        for pendiente in pendientes[1:]:
+            await self.st.pendientes.guardar(pendiente)
+        await self.tg.enviar(chat_id, msg.LOTE_DETECTADO.format(cantidad=total))
+        await self._abrir_tarjeta(pendientes[0], chat_id, msg.NO_COMPROBANTE)
+        log.info("lote_creado", lote_id=lote_id, gastos=total)
 
     # ---------- consultas (R12) ----------
 
@@ -517,6 +590,13 @@ class Flujo:
                 return await self._resolver_seguimiento_recurrencia(
                     cb, telegram_id, chat_id, message_id
                 )
+            if cb.accion in (
+                kb.Accion.LOTE_EDITAR,
+                kb.Accion.LOTE_AGREGAR,
+                kb.Accion.LOTE_CONFIRMAR,
+                kb.Accion.LOTE_CANCELAR,
+            ):
+                return await self._resolver_accion_lote(cb, persona, chat_id, message_id)
             p = await self.st.pendientes.obtener(cb.pendiente_id)
             if p is None or p.telegram_id != telegram_id or p.estado is not EstadoPendiente.ABIERTO:
                 await self.tg.editar(chat_id, message_id, msg.EXPIRADO)
@@ -544,6 +624,8 @@ class Flujo:
                 await self.st.pendientes.guardar(
                     p.model_copy(update={"estado": EstadoPendiente.DESCARTADO})
                 )
+                if p.es_lote:
+                    return await self._avanzar_lote(p, chat_id)
                 await self.tg.editar(chat_id, p.mensaje_tarjeta_id or 0, msg.DESCARTADO)
                 return msg.DESCARTADO
             case kb.Accion.CATEGORIA:
@@ -583,6 +665,12 @@ class Flujo:
                 await self._pedir(p, chat_id, CampoEsperado.MONTO)
             case kb.Accion.FECHA:
                 await self._pedir(p, chat_id, CampoEsperado.FECHA)
+            case kb.Accion.COMERCIO:
+                await self._pedir(p, chat_id, CampoEsperado.COMERCIO)
+            case kb.Accion.APLICAR_COMUNES:
+                if p.es_lote:
+                    await self._aplicar_comunes_lote(p)
+                    return msg.LOTE_COMUNES_APLICADOS
             case kb.Accion.VOLVER:
                 await self._mostrar_resumen(p, chat_id)
             case kb.Accion.GUARDAR:
@@ -590,13 +678,266 @@ class Flujo:
                     await self._mostrar_resumen(p, chat_id)
                     que = "compartido/personal" if p.compartido is None else "moneda y categoría"
                     return msg.TOAST_FALTA.format(que=que)
+                if p.es_lote:
+                    return await self._revisar_movimiento_lote(p, persona, chat_id)
                 return await self._confirmar(p, persona, chat_id)
             case kb.Accion.GUARDAR_IGUAL:
                 if not p.listo_para_guardar:
                     await self._mostrar_resumen(p, chat_id)
                     return None
+                if p.es_lote:
+                    await self.st.pendientes.guardar(
+                        p.model_copy(update={"estado": EstadoPendiente.REVISADO})
+                    )
+                    return await self._avanzar_lote(p, chat_id)
                 return await self._confirmar(p, persona, chat_id, forzar=True)
         return None
+
+    async def _aplicar_comunes_lote(self, p: Pendiente) -> None:
+        """Copia solo las respuestas realmente comunes; nunca comercio, monto, fecha o categoría."""
+        assert p.lote_id
+        await self.st.pendientes.guardar(p)
+        for otro in await self.st.pendientes.listar_lote(p.lote_id):
+            if otro.pendiente_id == p.pendiente_id or otro.estado is not EstadoPendiente.ABIERTO:
+                continue
+            cambios: dict[str, object] = {}
+            if p.compartido is not None:
+                cambios["compartido"] = p.compartido
+            if p.moneda is not None:
+                cambios["ediciones"] = otro.ediciones.model_copy(update={"moneda": p.moneda})
+            if cambios:
+                await self.st.pendientes.guardar(otro.model_copy(update=cambios))
+
+    async def _revisar_movimiento_lote(
+        self, p: Pendiente, persona: Persona, chat_id: int
+    ) -> str | None:
+        envio = a_local(self.reloj(), self.zona)
+        mes = mes_de(envio.date())
+        duplicado = await self._duplicado_de(p, mes, envio.date(), persona.nombre)
+        if duplicado is not None:
+            await self.st.pendientes.guardar(p)
+            await self.tg.editar(
+                chat_id,
+                p.mensaje_tarjeta_id or 0,
+                msg.POSIBLE_DUPLICADO.format(resumen=msg.gasto_linea(duplicado)),
+                kb.confirmar_duplicado(p.pendiente_id, es_lote=True),
+            )
+            return msg.TOAST_DUPLICADO
+        await self.st.pendientes.guardar(p.model_copy(update={"estado": EstadoPendiente.REVISADO}))
+        return await self._avanzar_lote(p, chat_id)
+
+    async def _avanzar_lote(self, actual: Pendiente, chat_id: int) -> str | None:
+        assert actual.lote_id
+        pendientes = await self.st.pendientes.listar_lote(actual.lote_id)
+        siguiente = next(
+            (
+                p
+                for p in pendientes
+                if p.estado is EstadoPendiente.ABIERTO and p.pendiente_id != actual.pendiente_id
+            ),
+            None,
+        )
+        message_id = actual.mensaje_tarjeta_id or 0
+        if siguiente is None:
+            await self._mostrar_resumen_lote(actual.lote_id, chat_id, message_id)
+            return msg.TOAST_OK
+        siguiente = siguiente.model_copy(update={"mensaje_tarjeta_id": message_id})
+        await self.st.pendientes.guardar(siguiente)
+        if siguiente.compartido is None:
+            await self.tg.editar(
+                chat_id,
+                message_id,
+                msg.paso_1(siguiente),
+                kb.paso_compartido(siguiente.pendiente_id, es_lote=True),
+            )
+        else:
+            await self._mostrar_resumen(siguiente, chat_id)
+        return msg.TOAST_OK
+
+    async def _mostrar_resumen_lote(self, lote_id: str, chat_id: int, message_id: int) -> None:
+        pendientes = await self.st.pendientes.listar_lote(lote_id)
+        incluidos = [p for p in pendientes if p.estado is EstadoPendiente.REVISADO]
+        editables = [
+            p
+            for p in pendientes
+            if p.estado in (EstadoPendiente.REVISADO, EstadoPendiente.DESCARTADO)
+        ]
+        etiquetas = [
+            (
+                p.pendiente_id,
+                f"{p.lote_indice}. {p.comercio or 'Sin comercio'}"
+                + (" (omitido)" if p.estado is EstadoPendiente.DESCARTADO else ""),
+            )
+            for p in editables
+        ]
+        await self.tg.editar(
+            chat_id,
+            message_id,
+            msg.resumen_lote(pendientes),
+            kb.confirmar_lote(lote_id, etiquetas, len(incluidos)),
+        )
+
+    async def _resolver_accion_lote(
+        self, cb: kb.Callback, persona: Persona, chat_id: int, message_id: int
+    ) -> str | None:
+        if cb.accion is kb.Accion.LOTE_EDITAR:
+            pendiente = await self.st.pendientes.obtener(cb.pendiente_id)
+            if (
+                pendiente is None
+                or not pendiente.es_lote
+                or pendiente.telegram_id != persona.telegram_id
+                or pendiente.estado not in (EstadoPendiente.REVISADO, EstadoPendiente.DESCARTADO)
+            ):
+                await self.tg.editar(chat_id, message_id, msg.EXPIRADO)
+                return msg.EXPIRADO
+            pendiente = pendiente.model_copy(
+                update={"estado": EstadoPendiente.ABIERTO, "mensaje_tarjeta_id": message_id}
+            )
+            await self._mostrar_resumen(pendiente, chat_id)
+            return None
+
+        lote_id = cb.pendiente_id
+        pendientes = await self.st.pendientes.listar_lote(lote_id)
+        if (
+            not pendientes
+            or any(p.telegram_id != persona.telegram_id for p in pendientes)
+            or any(p.vencido(self.reloj()) for p in pendientes)
+            or any(p.estado is EstadoPendiente.GUARDADO for p in pendientes)
+        ):
+            await self.tg.editar(chat_id, message_id, msg.EXPIRADO)
+            return msg.EXPIRADO
+        if cb.accion is kb.Accion.LOTE_CANCELAR:
+            for pendiente in pendientes:
+                await self.st.pendientes.guardar(
+                    pendiente.model_copy(update={"estado": EstadoPendiente.DESCARTADO})
+                )
+            await self.tg.editar(chat_id, message_id, msg.LOTE_CANCELADO)
+            return msg.LOTE_CANCELADO
+        if cb.accion is kb.Accion.LOTE_AGREGAR:
+            if len(pendientes) >= 10:
+                return msg.LOTE_MAXIMO
+            total = len(pendientes) + 1
+            for pendiente in pendientes:
+                await self.st.pendientes.guardar(pendiente.model_copy(update={"lote_total": total}))
+            primero = pendientes[0]
+            nuevo = Pendiente(
+                pendiente_id=f"p-{secrets.token_hex(4)}",
+                update_id=primero.update_id,
+                telegram_id=persona.telegram_id,
+                extraccion=Extraccion(
+                    tipo_doc=TipoDocExtraido.DEBITO,
+                    ultimos4_tarjeta=primero.extraccion.ultimos4_tarjeta,
+                ),
+                file_id=primero.file_id,
+                mime=primero.mime,
+                nota_caption=primero.nota_caption,
+                creado=self.reloj(),
+                expira=self.reloj() + self.ttl,
+                mensaje_tarjeta_id=message_id,
+                lote_id=lote_id,
+                lote_indice=total,
+                lote_total=total,
+            )
+            await self.st.pendientes.guardar(nuevo)
+            await self.tg.editar(
+                chat_id,
+                message_id,
+                msg.paso_1(nuevo),
+                kb.paso_compartido(nuevo.pendiente_id, es_lote=True),
+            )
+            return None
+        return await self._confirmar_lote(lote_id, persona, chat_id, message_id)
+
+    async def _confirmar_lote(
+        self, lote_id: str, persona: Persona, chat_id: int, message_id: int
+    ) -> str | None:
+        pendientes = await self.st.pendientes.listar_lote(lote_id)
+        incluidos = [p for p in pendientes if p.estado is EstadoPendiente.REVISADO]
+        if (
+            not incluidos
+            or any(not p.listo_para_guardar for p in incluidos)
+            or any(p.estado is EstadoPendiente.ABIERTO for p in pendientes)
+        ):
+            await self._mostrar_resumen_lote(lote_id, chat_id, message_id)
+            return msg.TOAST_FALTA.format(que="revisar todos los gastos")
+        ahora = self.reloj()
+        envio_local = a_local(ahora, self.zona)
+        mes = mes_de(envio_local.date())
+        config = await self.st.config.cargar()
+        tc = config.tc_del_mes(mes)
+        if tc is None:
+            await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
+            return msg.TC_FALTANTE.format(mes=mes)[:200]
+        catalogo = await self.st.categorias.catalogo()
+        subido = None
+        gastos: list[Gasto] = []
+        try:
+            primero = incluidos[0]
+            assert primero.file_id
+            contenido = await self.tg.descargar(primero.file_id)
+            ruta = naming.ruta_carpeta(envio_local.date(), persona.nombre)
+            existentes_nombres = await self.st.drive.nombres_en(ruta)
+            extension = naming.extension_de(primero.mime)
+            nombre = naming.nombre_disponible(
+                existentes_nombres,
+                lambda intento: naming.nombre_archivo_multiple(
+                    envio_local.date(),
+                    len(incluidos),
+                    extension,
+                    persona=persona.nombre,
+                    intento=intento,
+                ),
+            )
+            subido = await self.st.drive.subir(
+                ruta, nombre, contenido, primero.mime or "image/jpeg"
+            )
+            ids_existentes = await self.st.gastos.ids_del_mes(mes)
+            for pendiente in incluidos:
+                gasto_id = ids.generar_id(envio_local.date(), ids_existentes)
+                ids_existentes.append(gasto_id)
+                assert pendiente.subcategoria is not None
+                rubro = catalogo.rubro_de(pendiente.subcategoria)
+                gastos.append(
+                    self._armar_gasto(
+                        pendiente,
+                        persona,
+                        gasto_id,
+                        envio_local,
+                        tc.valor,
+                        rubro,
+                        subido.link,
+                    )
+                )
+            await self.st.gastos.agregar_muchos(gastos)
+        except StorageError as exc:
+            if subido is not None:
+                try:
+                    await self.st.drive.borrar(subido.file_id)
+                except StorageError:
+                    log.error("rollback_drive_fallo", file_id=subido.file_id)
+            log.warning("confirmar_lote_fallo", lote_id=lote_id, motivo=str(exc))
+            await self.tg.enviar(chat_id, msg.ERROR_GUARDAR.format(motivo=exc))
+            return msg.ERROR_GUARDAR.format(motivo=exc)[:200]
+
+        for pendiente, gasto in zip(incluidos, gastos, strict=True):
+            await self.st.pendientes.guardar(
+                pendiente.model_copy(
+                    update={"estado": EstadoPendiente.GUARDADO, "gasto_id": gasto.id}
+                )
+            )
+        await self._recalcular_dashboard(mes, config, tc.valor)
+        assert subido is not None
+        await self.tg.editar(
+            chat_id,
+            message_id,
+            msg.LOTE_GUARDADO.format(cantidad=len(gastos), link=subido.link),
+        )
+        for gasto in gastos:
+            await self.tg.enviar(
+                chat_id, msg.gasto_lote_guardado(gasto), kb.tipo_registro(gasto.id)
+            )
+        log.info("lote_guardado", lote_id=lote_id, gastos=len(gastos), mes=mes)
+        return msg.TOAST_OK
 
     async def _resolver_tipo_registro(
         self, cb: kb.Callback, persona: Persona, chat_id: int, message_id: int
@@ -754,12 +1095,18 @@ class Flujo:
             CampoEsperado.MONTO_USD: msg.PEDIR_MONTO_USD.format(
                 moneda=p.extraccion.moneda_original or "otra moneda"
             ),
+            CampoEsperado.COMERCIO: msg.PEDIR_COMERCIO,
         }
         await self.tg.enviar(chat_id, textos[campo], force_reply=True)
 
     async def _aplicar_respuesta(self, p: Pendiente, chat_id: int, texto: str) -> None:
         try:
-            if p.esperando is CampoEsperado.FECHA:
+            if p.esperando is CampoEsperado.COMERCIO:
+                comercio = texto.strip()
+                if not comercio:
+                    raise TextoInvalido("comercio vacío")
+                ediciones = p.ediciones.model_copy(update={"comercio": comercio[:120]})
+            elif p.esperando is CampoEsperado.FECHA:
                 fecha = parsear_fecha(texto, a_local(self.reloj(), self.zona).date())
                 ediciones = p.ediciones.model_copy(update={"fecha": fecha})
             else:
@@ -769,9 +1116,12 @@ class Flujo:
                     cambios["moneda"] = Moneda.USD
                 ediciones = p.ediciones.model_copy(update=cambios)
         except TextoInvalido:
-            invalido = (
-                msg.FECHA_INVALIDA if p.esperando is CampoEsperado.FECHA else msg.MONTO_INVALIDO
-            )
+            if p.esperando is CampoEsperado.FECHA:
+                invalido = msg.FECHA_INVALIDA
+            elif p.esperando is CampoEsperado.COMERCIO:
+                invalido = msg.PEDIR_COMERCIO
+            else:
+                invalido = msg.MONTO_INVALIDO
             await self.tg.enviar(chat_id, invalido, force_reply=True)
             return
         await self._mostrar_resumen(
@@ -785,7 +1135,10 @@ class Flujo:
         rubro = catalogo.buscar(p.subcategoria) if p.subcategoria else None
         texto = msg.resumen(p, rubro.rubro.value if rubro else None)
         teclado = kb.paso_resumen(
-            p.pendiente_id, listo=p.listo_para_guardar, moneda_ambigua=p.moneda is None
+            p.pendiente_id,
+            listo=p.listo_para_guardar,
+            moneda_ambigua=p.moneda is None,
+            es_lote=p.es_lote,
         )
         if p.mensaje_tarjeta_id is None:
             mid = await self.tg.enviar(chat_id, texto, teclado)
@@ -810,7 +1163,9 @@ class Flujo:
         if tc is None:
             await self.tg.enviar(chat_id, msg.TC_FALTANTE.format(mes=mes))
             return msg.TC_FALTANTE.format(mes=mes)[:200]
-        if not forzar and (duplicado := await self._duplicado_de(p, mes, envio_local.date())):
+        if not forzar and (
+            duplicado := await self._duplicado_de(p, mes, envio_local.date(), persona.nombre)
+        ):
             log.info("posible_duplicado", gasto_id=duplicado.id)
             await self.st.pendientes.guardar(p)
             await self.tg.editar(
@@ -837,7 +1192,7 @@ class Flujo:
                     existentes,
                     lambda i: naming.nombre_archivo(
                         envio_local.date(),
-                        e.comercio,
+                        p.comercio,
                         p.monto or Decimal(0),
                         p.moneda or Moneda.UYU,
                         extension,
@@ -883,7 +1238,9 @@ class Flujo:
         log.info("gasto_guardado", gasto_id=gasto.id, mes=mes)
         return msg.TOAST_OK
 
-    async def _duplicado_de(self, p: Pendiente, mes: str, hoy: date) -> Gasto | None:
+    async def _duplicado_de(
+        self, p: Pendiente, mes: str, hoy: date, quien_subio: str
+    ) -> Gasto | None:
         """Busca un gasto parecido ya guardado (R20). Si Sheets falla, no bloquea el alta."""
         assert p.monto is not None and p.moneda is not None
         try:
@@ -894,8 +1251,9 @@ class Flujo:
             fecha=p.fecha or hoy,
             monto=p.monto,
             moneda=p.moneda,
-            comercio=p.extraccion.comercio,
-            gastos=del_mes,
+            comercio=p.comercio,
+            gastos=(g for g in del_mes if g.quien_subio == quien_subio),
+            dias=0 if p.es_lote else 3,
         )
 
     def _armar_gasto(
@@ -921,7 +1279,7 @@ class Flujo:
             fecha_envio=envio_local,
             quien_subio=persona.nombre,
             compartido=bool(p.compartido),
-            comercio=e.comercio or "",
+            comercio=p.comercio or "",
             monto=p.monto,
             moneda=p.moneda,
             tc_mes=tc,

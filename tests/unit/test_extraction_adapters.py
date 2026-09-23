@@ -48,6 +48,23 @@ async def test_gemini_imagen_y_texto() -> None:
     assert "450 uyu farmacia" in stub.llamadas[1]["contents"][0]
 
 
+async def test_gemini_extrae_varios_movimientos_con_schema_de_lote() -> None:
+    cuerpo = json.dumps(
+        {
+            "gastos": [
+                json.loads(_json(comercio="Ola Poke", monto=582.6)),
+                json.loads(_json(comercio="Ray Pinto", monto=32)),
+            ]
+        }
+    )
+    stub = _GeminiStub(cuerpo)
+    ex = GeminiExtractor("k", "gemini-x", client=stub)
+    gastos = await ex.extraer_multiples(IMAGEN, CATS)
+    assert [g.comercio for g in gastos] == ["Ola Poke", "Ray Pinto"]
+    schema = stub.llamadas[0]["config"]["response_json_schema"]
+    assert schema["properties"]["gastos"]["maxItems"] == 10
+
+
 async def test_gemini_errores() -> None:
     with pytest.raises(ExtraccionFallida) as exc:
         await GeminiExtractor("k", "m", client=_GeminiStub(error=RuntimeError("boom"))).extraer(

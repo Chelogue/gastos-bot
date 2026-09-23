@@ -7,8 +7,13 @@ from typing import Any
 
 from gastos_bot.domain.models import Extraccion
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida
-from gastos_bot.extraction.prompts import prompt_extraccion
-from gastos_bot.extraction.schema import SCHEMA_EXTRACCION, parsear_respuesta
+from gastos_bot.extraction.prompts import prompt_extraccion, prompt_extraccion_multiple
+from gastos_bot.extraction.schema import (
+    SCHEMA_EXTRACCION,
+    SCHEMA_EXTRACCION_MULTIPLE,
+    parsear_respuesta,
+    parsear_respuesta_multiple,
+)
 from gastos_bot.logging_setup import get_logger
 
 log = get_logger("gastos_bot.extraction.gemini")
@@ -65,3 +70,33 @@ class GeminiExtractor:
         if not texto:
             raise ExtraccionFallida("Gemini devolvió una respuesta vacía", reintentable=False)
         return parsear_respuesta(texto, categorias)
+
+    async def extraer_multiples(
+        self, entrada: Entrada, categorias: Sequence[str]
+    ) -> tuple[Extraccion, ...]:
+        if not entrada.es_imagen:
+            return (await self.extraer(entrada, categorias),)
+        assert entrada.imagen is not None and entrada.mime is not None
+        from google.genai import types
+
+        contenidos = [
+            types.Part.from_bytes(data=entrada.imagen, mime_type=entrada.mime),
+            prompt_extraccion_multiple(categorias, entrada.fecha_referencia),
+        ]
+        config = {
+            "response_mime_type": "application/json",
+            "response_json_schema": SCHEMA_EXTRACCION_MULTIPLE,
+            "temperature": 0,
+        }
+        try:
+            respuesta = await self._client.aio.models.generate_content(
+                model=self.modelo, contents=contenidos, config=config
+            )
+        except Exception as exc:
+            motivo = _motivo(exc)
+            log.warning("gemini_error", error=type(exc).__name__, motivo=motivo)
+            raise ExtraccionFallida(f"Gemini: {motivo}", reintentable=_reintentable(exc)) from exc
+        texto = getattr(respuesta, "text", None)
+        if not texto:
+            raise ExtraccionFallida("Gemini devolvió una respuesta vacía", reintentable=False)
+        return parsear_respuesta_multiple(texto, categorias)

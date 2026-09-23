@@ -45,6 +45,10 @@ class GastosRepo(Protocol):
         """Escribe la fila en la pestaña del mes de envío, creándola si no existe (R5)."""
         ...
 
+    async def agregar_muchos(self, gastos: Sequence[Gasto]) -> None:
+        """Escribe un lote completo en una sola operación del Sheet."""
+        ...
+
     async def listar_mes(self, mes: str) -> list[Gasto]: ...
 
     async def listar_anteriores(self, mes: str) -> list[Gasto]:
@@ -80,6 +84,8 @@ class PendientesRepo(Protocol):
         ...
 
     async def obtener(self, pendiente_id: str) -> Pendiente | None: ...
+
+    async def listar_lote(self, lote_id: str) -> list[Pendiente]: ...
 
     async def esperando_respuesta(self, telegram_id: int) -> Pendiente | None:
         """El pendiente abierto de esa persona que espera un texto (monto/fecha), si hay."""

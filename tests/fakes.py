@@ -304,7 +304,7 @@ class FakeExtractor:
 
     nombre = "fake/fake"
 
-    def __init__(self, *respuestas: Extraccion | Exception) -> None:
+    def __init__(self, *respuestas: Extraccion | Sequence[Extraccion] | Exception) -> None:
         self._cola = list(respuestas)
         self.llamadas: list[tuple[Entrada, tuple[str, ...]]] = []
 
@@ -315,7 +315,22 @@ class FakeExtractor:
         respuesta = self._cola.pop(0) if len(self._cola) > 1 else self._cola[0]
         if isinstance(respuesta, Exception):
             raise respuesta
+        if not isinstance(respuesta, Extraccion):
+            return tuple(respuesta)[0]
         return respuesta
+
+    async def extraer_multiples(
+        self, entrada: Entrada, categorias: Sequence[str]
+    ) -> tuple[Extraccion, ...]:
+        self.llamadas.append((entrada, tuple(categorias)))
+        if not self._cola:
+            raise ExtraccionFallida("FakeExtractor sin respuestas encoladas")
+        respuesta = self._cola.pop(0) if len(self._cola) > 1 else self._cola[0]
+        if isinstance(respuesta, Exception):
+            raise respuesta
+        if isinstance(respuesta, Extraccion):
+            return (respuesta,)
+        return tuple(respuesta)
 
 
 # ---------- storage en memoria ----------
@@ -362,6 +377,12 @@ class FakeGastosRepo:
         if self.fallar_al_agregar:
             raise StorageError("Sheets caído (fake)")
         self.filas.setdefault(mes_de(gasto.fecha_envio.date()), []).append(gasto)
+
+    async def agregar_muchos(self, gastos: Sequence[Gasto]) -> None:
+        if self.fallar_al_agregar:
+            raise StorageError("Sheets caído (fake)")
+        for gasto in gastos:
+            self.filas.setdefault(mes_de(gasto.fecha_envio.date()), []).append(gasto)
 
     async def listar_mes(self, mes: str) -> list[Gasto]:
         return list(self.filas.get(mes, []))
@@ -410,6 +431,12 @@ class FakePendientesRepo:
 
     async def obtener(self, pendiente_id: str) -> Pendiente | None:
         return self.pendientes.get(pendiente_id)
+
+    async def listar_lote(self, lote_id: str) -> list[Pendiente]:
+        return sorted(
+            (p for p in self.pendientes.values() if p.lote_id == lote_id),
+            key=lambda p: p.lote_indice or 0,
+        )
 
     async def esperando_respuesta(self, telegram_id: int) -> Pendiente | None:
         candidatos = [
@@ -542,7 +569,9 @@ class FakeMensajero:
         return [b.data for fila in teclado for b in fila]
 
 
-def flujo_factory_falso(*respuestas: Extraccion | Exception, config: Config | None = None) -> Any:
+def flujo_factory_falso(
+    *respuestas: Extraccion | Sequence[Extraccion] | Exception, config: Config | None = None
+) -> Any:
     """Factory para build_application: Flujo con extractor y storage falsos, Mensajero real."""
     from datetime import date
     from decimal import Decimal

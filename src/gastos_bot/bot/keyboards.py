@@ -23,6 +23,7 @@ class Accion(StrEnum):
     ELEGIR_CATEGORIA = "kc"  # valor = índice en el catálogo activo
     MONTO = "m"
     FECHA = "f"
+    COMERCIO = "co"
     MONEDA = "mo"  # abre el teclado de monedas
     ELEGIR_MONEDA = "mc"  # valor UYU | USD
     DESCARTAR = "d"
@@ -38,6 +39,11 @@ class Accion(StrEnum):
     RECURRENTE_FINALIZAR = "rx"
     MODIFICAR_SOLO = "ms"
     MODIFICAR_PROXIMOS = "mp"
+    APLICAR_COMUNES = "la"
+    LOTE_EDITAR = "le"
+    LOTE_AGREGAR = "l+"
+    LOTE_CONFIRMAR = "lg"
+    LOTE_CANCELAR = "ld"
 
 
 @dataclass(frozen=True)
@@ -73,17 +79,17 @@ def _b(texto: str, accion: Accion, pid: str, valor: str | None = None) -> Boton:
     return Boton(texto, data)
 
 
-def paso_compartido(pid: str) -> Teclado:
+def paso_compartido(pid: str, *, es_lote: bool = False) -> Teclado:
     return [
         [
             _b("👥 Compartido", Accion.COMPARTIDO, pid, "s"),
             _b("👤 Personal", Accion.COMPARTIDO, pid, "p"),
         ],
-        [_b("❌ Descartar", Accion.DESCARTAR, pid)],
+        [_b("⏭️ Omitir" if es_lote else "❌ Descartar", Accion.DESCARTAR, pid)],
     ]
 
 
-def paso_resumen(pid: str, *, listo: bool, moneda_ambigua: bool) -> Teclado:
+def paso_resumen(pid: str, *, listo: bool, moneda_ambigua: bool, es_lote: bool = False) -> Teclado:
     filas: Teclado = []
     if moneda_ambigua:
         filas.append(
@@ -93,10 +99,13 @@ def paso_resumen(pid: str, *, listo: bool, moneda_ambigua: bool) -> Teclado:
             ]
         )
     elif listo:
-        filas.append([_b("✅ Guardar", Accion.GUARDAR, pid)])
+        filas.append([_b("➡️ Continuar" if es_lote else "✅ Guardar", Accion.GUARDAR, pid)])
     filas.append([_b("✏️ Categoría", Accion.CATEGORIA, pid), _b("✏️ Monto", Accion.MONTO, pid)])
     filas.append([_b("✏️ Moneda", Accion.MONEDA, pid), _b("📅 Fecha", Accion.FECHA, pid)])
-    filas.append([_b("❌ Descartar", Accion.DESCARTAR, pid)])
+    filas.append([_b("🏪 Comercio", Accion.COMERCIO, pid)])
+    if es_lote:
+        filas.append([_b("⏩ Aplicar tipo y moneda a los demás", Accion.APLICAR_COMUNES, pid)])
+    filas.append([_b("⏭️ Omitir" if es_lote else "❌ Descartar", Accion.DESCARTAR, pid)])
     return filas
 
 
@@ -131,13 +140,35 @@ def monedas(pid: str) -> Teclado:
     ]
 
 
-def confirmar_duplicado(pid: str) -> Teclado:
+def confirmar_duplicado(pid: str, *, es_lote: bool = False) -> Teclado:
     return [
         [
-            _b("✅ Guardar igual", Accion.GUARDAR_IGUAL, pid),
-            _b("❌ Descartar", Accion.DESCARTAR, pid),
+            _b("✅ Incluir igual" if es_lote else "✅ Guardar igual", Accion.GUARDAR_IGUAL, pid),
+            _b("⏭️ Omitir" if es_lote else "❌ Descartar", Accion.DESCARTAR, pid),
         ]
     ]
+
+
+def confirmar_lote(
+    lote_id: str, pendientes: list[tuple[str, str]], cantidad_incluidos: int
+) -> Teclado:
+    """``pendientes`` contiene (ID, etiqueta corta) de los movimientos incluidos."""
+    filas: Teclado = [
+        [_b(f"✏️ {etiqueta}"[:48], Accion.LOTE_EDITAR, pid)] for pid, etiqueta in pendientes
+    ]
+    filas.append([_b("➕ Agregar gasto", Accion.LOTE_AGREGAR, lote_id)])
+    if cantidad_incluidos:
+        filas.append(
+            [
+                _b(
+                    f"✅ Registrar los {cantidad_incluidos} gastos",
+                    Accion.LOTE_CONFIRMAR,
+                    lote_id,
+                )
+            ]
+        )
+    filas.append([_b("❌ Cancelar todo", Accion.LOTE_CANCELAR, lote_id)])
+    return filas
 
 
 def confirmar_borrado(gasto_id: str) -> Teclado:

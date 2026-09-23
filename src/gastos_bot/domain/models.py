@@ -79,6 +79,7 @@ class EstadoPendiente(StrEnum):
     """Ciclo de vida de un pendiente. Se guarda dentro de ``json_extraccion`` (ADR 0003)."""
 
     ABIERTO = "abierto"
+    REVISADO = "revisado"  # validado dentro de un lote; todavía no se escribió el gasto
     GUARDADO = "guardado"
     DESCARTADO = "descartado"
     RECHAZADO = "rechazado"  # la imagen no era un comprobante (tipo_doc = otro)
@@ -90,6 +91,7 @@ class CampoEsperado(StrEnum):
     MONTO = "monto"
     FECHA = "fecha"
     MONTO_USD = "monto_usd"  # D3: moneda extranjera
+    COMERCIO = "comercio"
 
 
 Monto = Annotated[Decimal, Field(max_digits=14, decimal_places=2)]
@@ -157,10 +159,14 @@ class Ediciones(BaseModel):
     moneda: Moneda | None = None
     fecha: date | None = None
     subcategoria: str | None = None
+    comercio: str | None = None
 
     @property
     def hubo(self) -> bool:
-        return any(v is not None for v in (self.monto, self.moneda, self.fecha, self.subcategoria))
+        return any(
+            v is not None
+            for v in (self.monto, self.moneda, self.fecha, self.subcategoria, self.comercio)
+        )
 
 
 class Pendiente(BaseModel):
@@ -187,6 +193,9 @@ class Pendiente(BaseModel):
     repetido_de: str | None = None  # ID del gasto que se está repitiendo (R23)
     recurrente_id: str | None = None  # al editar una ocurrencia generada automáticamente
     actualizar_recurrencia: bool = False  # ``este y los próximos``
+    lote_id: str | None = None
+    lote_indice: int | None = Field(default=None, ge=1, le=10)
+    lote_total: int | None = Field(default=None, ge=2, le=10)
 
     # Valores efectivos = extracción con las ediciones encima.
     @property
@@ -208,6 +217,14 @@ class Pendiente(BaseModel):
     @property
     def subcategoria(self) -> str | None:
         return self.ediciones.subcategoria or self.extraccion.subcategoria
+
+    @property
+    def comercio(self) -> str | None:
+        return self.ediciones.comercio or self.extraccion.comercio
+
+    @property
+    def es_lote(self) -> bool:
+        return self.lote_id is not None
 
     @property
     def listo_para_guardar(self) -> bool:

@@ -135,6 +135,18 @@ async def test_gastos_crea_pestana_y_lista(cliente: SheetsCliente) -> None:
     assert listado[0].monto_usd == Decimal("31.25")
 
 
+async def test_gastos_agrega_un_lote_en_orden(cliente: SheetsCliente) -> None:
+    repo = SheetsGastosRepo(cliente)
+    await repo.agregar_muchos(
+        [_gasto("G-260910-001"), _gasto("G-260910-002"), _gasto("G-260910-003")]
+    )
+    assert [g.id for g in await repo.listar_mes("2026-09")] == [
+        "G-260910-001",
+        "G-260910-002",
+        "G-260910-003",
+    ]
+
+
 async def test_guardar_tc_reemplaza_la_fila_del_mes(cliente: SheetsCliente) -> None:
     repo = SheetsConfigRepo(cliente)
     filas_antes = len(cliente.hoja_o_error("Config").get_all_values())
@@ -226,10 +238,14 @@ async def test_pendientes_ciclo_completo(cliente: SheetsCliente) -> None:
     assert esperando is not None and esperando.pendiente_id == "p2"
     assert await repo.esperando_respuesta(222) is None
 
+    await repo.guardar(_pendiente("p4", 4, lote_id="l-1", lote_indice=2, lote_total=2))
+    await repo.guardar(_pendiente("p3", 4, lote_id="l-1", lote_indice=1, lote_total=2))
+    assert [p.pendiente_id for p in await repo.listar_lote("l-1")] == ["p3", "p4"]
+
     # reemplazo por id: no duplica filas
     await repo.guardar(_pendiente("p1", 1, estado=EstadoPendiente.GUARDADO))
     ws = cliente.hoja_o_error("Pendientes")
-    assert len(ws.get_all_values()) == 3
+    assert len(ws.get_all_values()) == 5
     p1 = await repo.obtener("p1")
     assert p1 is not None and p1.estado is EstadoPendiente.GUARDADO
 

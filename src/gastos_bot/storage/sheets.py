@@ -185,11 +185,19 @@ class SheetsGastosRepo:
         return await en_hilo(leer)
 
     async def agregar(self, gasto: Gasto) -> None:
-        mes = f"{gasto.fecha_envio:%Y-%m}"
+        await self.agregar_muchos([gasto])
+
+    async def agregar_muchos(self, gastos: Sequence[Gasto]) -> None:
+        if not gastos:
+            return
+        meses = {f"{g.fecha_envio:%Y-%m}" for g in gastos}
+        if len(meses) != 1:
+            raise StorageError("un lote no puede abarcar más de un mes de envío")
+        mes = meses.pop()
 
         def escribir() -> None:
             ws = asegurar_pestana_mes(self._c.sh, mes)
-            ws.append_rows([gasto_a_fila(gasto)], value_input_option="USER_ENTERED")
+            ws.append_rows([gasto_a_fila(g) for g in gastos], value_input_option="USER_ENTERED")
 
         await en_hilo(escribir)
 

@@ -9,6 +9,7 @@ from gastos_bot.domain.naming import (
     extension_de,
     formatear_monto,
     nombre_archivo,
+    nombre_archivo_multiple,
     nombre_disponible,
     ruta_carpeta,
     ruta_relativa,
@@ -62,6 +63,10 @@ def test_nombre_archivo_segun_prd() -> None:
         F, "Disco", Decimal("-300"), Moneda.UYU, persona="Nikole", reembolso=True, intento=2
     )
     assert nikole == "2026-09-10_Disco_300-UYU_R_Nikole-2.jpg"
+    assert (
+        nombre_archivo_multiple(F, 8, persona="Marcelo")
+        == "2026-09-10_multiple_8-gastos_Marcelo.jpg"
+    )
 
 
 def test_colisiones() -> None:

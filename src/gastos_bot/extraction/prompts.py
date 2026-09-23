@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 
 INSTRUCCIONES = """\
 Sos un asistente que lee comprobantes de gastos de Uruguay (facturas, tickets, capturas de
@@ -45,3 +46,33 @@ def prompt_extraccion(categorias: Sequence[str], texto: str | None = None) -> st
     else:
         partes.append("Analizá la imagen adjunta.")
     return "\n\n".join(partes)
+
+
+def prompt_extraccion_multiple(
+    categorias: Sequence[str], fecha_referencia: date | None = None
+) -> str:
+    """Prompt para capturas bancarias que pueden contener varios movimientos."""
+    lista = "\n".join(f"- {c}" for c in categorias)
+    referencia = (
+        f"La captura se recibió el {fecha_referencia.isoformat()}. " if fecha_referencia else ""
+    )
+    reglas = f"""\
+{INSTRUCCIONES}
+
+La imagen puede mostrar de 1 a 10 movimientos bancarios independientes.
+- Devolvé un objeto JSON con una única clave \"gastos\", que contiene una lista.
+- Creá un elemento por transacción o débito visible, respetando el orden de arriba hacia abajo.
+- No desgloses una factura o compra en productos: el total de una compra siempre es un solo gasto.
+- No confundas saldos, límites, totales de cuenta ni los últimos dígitos de la tarjeta con gastos.
+- Si hay más de 10 movimientos, devolvé solamente los primeros 10 visibles.
+- {referencia}Interpretá \"hoy\", \"ayer\" y días de la semana respecto de esa fecha. Si no se puede
+  determinar una fecha con seguridad, dejala vacía.
+- Datos compartidos por la pantalla, como moneda o últimos cuatro dígitos de la tarjeta, pueden
+  repetirse en cada movimiento al que correspondan.
+- Si no hay ningún movimiento legible, devolvé un único elemento con tipo_doc = \"otro\".
+
+Subcategorías válidas:
+{lista}
+
+Analizá la imagen adjunta y no agregues texto fuera del JSON."""
+    return reglas

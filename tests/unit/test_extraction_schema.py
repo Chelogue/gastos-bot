@@ -5,8 +5,12 @@ import pytest
 
 from gastos_bot.domain.models import MonedaExtraida, TipoDocExtraido
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida
-from gastos_bot.extraction.prompts import prompt_extraccion
-from gastos_bot.extraction.schema import SCHEMA_EXTRACCION, parsear_respuesta
+from gastos_bot.extraction.prompts import prompt_extraccion, prompt_extraccion_multiple
+from gastos_bot.extraction.schema import (
+    SCHEMA_EXTRACCION,
+    parsear_respuesta,
+    parsear_respuesta_multiple,
+)
 
 CATS = ["Supermercado", "Salud", "Ocio"]
 CONFIANZA_ALTA = {"monto": 0.95, "moneda": 0.9, "fecha": 0.9, "comercio": 0.8, "subcategoria": 0.7}
@@ -81,6 +85,31 @@ def test_prompt_incluye_reglas_y_categorias() -> None:
     assert "U$S" in p and "UYU" in p and "- Supermercado" in p and "imagen adjunta" in p
     pt = prompt_extraccion(CATS, texto="450 uyu farmacia")
     assert "450 uyu farmacia" in pt and "No hay imagen" in pt
+
+
+def test_parsea_hasta_diez_gastos_de_una_imagen() -> None:
+    datos = {
+        "gastos": [
+            json.loads(_json(comercio="Ola Poke", monto=582.6)),
+            json.loads(_json(comercio="Ray Pinto", monto=32)),
+        ]
+    }
+    gastos = parsear_respuesta_multiple(json.dumps(datos), CATS)
+    assert [g.comercio for g in gastos] == ["Ola Poke", "Ray Pinto"]
+    assert [g.monto for g in gastos] == [Decimal("582.6"), Decimal("32")]
+
+    demasiados = {"gastos": [json.loads(_json())] * 11}
+    with pytest.raises(ExtraccionFallida):
+        parsear_respuesta_multiple(json.dumps(demasiados), CATS)
+
+
+def test_prompt_multiple_resuelve_fechas_relativas_y_no_desglosa_productos() -> None:
+    from datetime import date
+
+    prompt = prompt_extraccion_multiple(CATS, date(2026, 9, 23))
+    assert "2026-09-23" in prompt
+    assert "ayer" in prompt and "días de la semana" in prompt
+    assert "No desgloses" in prompt and "primeros 10" in prompt
 
 
 def test_entrada_valida() -> None:

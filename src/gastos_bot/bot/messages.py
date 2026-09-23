@@ -11,7 +11,14 @@ from collections.abc import Sequence
 from decimal import Decimal
 
 from gastos_bot.domain.indicador import ResumenMes
-from gastos_bot.domain.models import Gasto, Moneda, Pendiente, Quincena, TipoDocExtraido
+from gastos_bot.domain.models import (
+    EstadoPendiente,
+    Gasto,
+    Moneda,
+    Pendiente,
+    Quincena,
+    TipoDocExtraido,
+)
 from gastos_bot.reports.quincenal import Reporte
 
 START = (
@@ -23,6 +30,7 @@ AYUDA = (
     "fecha y comercio, te propongo una categoría y vos confirmás con un toque.\n\n"
     "Consejos:\n"
     "• Facturas largas: mandalas «como archivo» para que no pierdan calidad.\n"
+    "• Una captura bancaria puede tener hasta 10 movimientos: los revisás y guardás juntos.\n"
     "• Un comprobante por gasto: la factura de compra o la captura de la cuota, no las dos.\n"
     "• Reembolsos y devoluciones se registran en negativo.\n"
     "• Si el comprobante está en otra moneda, te voy a pedir el monto en dólares.\n"
@@ -118,6 +126,7 @@ REPORTE_SIN_TC = (
 )
 PEDIR_MONTO = "Escribí el monto (negativo si es un reembolso). Ej.: 1250,50"
 PEDIR_FECHA = "Escribí la fecha del gasto. Ej.: 3/9, 03/09/2026 o «hoy»"
+PEDIR_COMERCIO = "Escribí el nombre del comercio o una descripción corta del gasto."
 PEDIR_MONTO_USD = "El comprobante está en {moneda}. Escribí cuánto fue en dólares (USD)."
 MONTO_INVALIDO = "No entendí el monto. Escribí solo el número, por ejemplo 1250,50 o -300."
 FECHA_INVALIDA = "No entendí la fecha. Probá con 3/9, 03/09/2026 o «hoy»."
@@ -134,6 +143,12 @@ TOAST_OK = "Listo."
 TOAST_RECURRENCIA = "Recurrencia actualizada."
 ELEGIR_CATEGORIA = "Elegí la categoría:"
 ELEGIR_MONEDA = "¿En qué moneda es?"
+LOTE_DETECTADO = "Encontré {cantidad} gastos. Los revisamos uno por uno antes de guardar."
+LOTE_VACIO = "Omitiste todos los gastos. Podés agregar uno manualmente o cancelar el lote."
+LOTE_GUARDADO = "✅ Registré {cantidad} gastos en un solo lote.\n📎 {link}"
+LOTE_CANCELADO = "Cancelado. No guardé ningún gasto ni la imagen."
+LOTE_COMUNES_APLICADOS = "Apliqué compartido/personal y moneda a los gastos restantes."
+LOTE_MAXIMO = "El lote ya llegó al máximo de 10 gastos."
 
 
 def gasto_recurrente_registrado(gasto: Gasto, recurrente_id: str) -> str:
@@ -178,9 +193,11 @@ def monto_fmt(monto: Decimal | None, moneda: Moneda | None) -> str:
 def paso_1(p: Pendiente) -> str:
     e = p.extraccion
     lineas = [f"Leí: {_TIPO_DOC[e.tipo_doc]} · {monto_fmt(p.monto, p.moneda)}"]
-    if e.comercio:
-        lineas[0] += f" · {e.comercio}"
+    if p.comercio:
+        lineas[0] += f" · {p.comercio}"
     lineas.append("¿Es un gasto compartido o personal?")
+    if p.es_lote:
+        lineas.insert(0, f"Gasto {p.lote_indice} de {p.lote_total}")
     return "\n".join(lineas)
 
 
@@ -201,7 +218,7 @@ def resumen(p: Pendiente, rubro: str | None) -> str:
     lineas = [
         f"{titulo} · {quien[p.compartido]}",
         f"💰 {monto_fmt(p.monto, p.moneda)}{monto_editado}",
-        f"🏪 {e.comercio or 'comercio: ?'}",
+        f"🏪 {p.comercio or 'comercio: ?'}" + (" ✏️" if ed.comercio else ""),
         f"📅 {fecha}{' ✏️' if ed.fecha else ''}",
         f"🏷️ {p.subcategoria or 'categoría: elegila'}"
         + (f" ({rubro})" if rubro else "")
@@ -213,6 +230,8 @@ def resumen(p: Pendiente, rubro: str | None) -> str:
         extras.append(f"original: {e.monto_original or '?'} {e.moneda_original}")
     if extras:
         lineas.append("📝 " + " · ".join(extras))
+    if p.es_lote:
+        lineas.insert(0, f"Gasto {p.lote_indice} de {p.lote_total}")
     if p.moneda is None:
         lineas.append("⚠️ No pude distinguir si es en pesos o dólares.")
     if not p.listo_para_guardar and p.moneda is not None:
@@ -229,9 +248,33 @@ def resumen(p: Pendiente, rubro: str | None) -> str:
 
 def resumen_guardado(p: Pendiente, rubro: str) -> str:
     return (
-        f"{monto_fmt(p.monto, p.moneda)} · {p.extraccion.comercio or 'sin comercio'} · "
+        f"{monto_fmt(p.monto, p.moneda)} · {p.comercio or 'sin comercio'} · "
         f"{p.subcategoria} ({rubro}) · {'compartido' if p.compartido else 'personal'}"
     )
+
+
+def resumen_lote(pendientes: Sequence[Pendiente]) -> str:
+    incluidos = [p for p in pendientes if p.estado is EstadoPendiente.REVISADO]
+    omitidos = [p for p in pendientes if p.estado is EstadoPendiente.DESCARTADO]
+    if not incluidos:
+        lineas = [LOTE_VACIO]
+    else:
+        lineas = [f"Listo para registrar {len(incluidos)} gastos:", ""]
+        for p in incluidos:
+            fecha = f"{p.fecha:%d/%m}" if p.fecha else "fecha de hoy"
+            lineas.append(
+                f"{p.lote_indice}. {p.comercio or 'Sin comercio'} · "
+                f"{monto_fmt(p.monto, p.moneda)} · "
+                f"{fecha} · {p.subcategoria}"
+            )
+    if omitidos:
+        lineas += ["", f"Omitidos: {len(omitidos)}."]
+    lineas += ["", "Nada se guarda hasta que confirmes el lote."]
+    return "\n".join(lineas)
+
+
+def gasto_lote_guardado(gasto: Gasto) -> str:
+    return f"✅ {gasto_linea(gasto)}{PREGUNTAR_RECURRENTE}"
 
 
 MESES = (

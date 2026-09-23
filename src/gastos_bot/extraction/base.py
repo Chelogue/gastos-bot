@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 
 from gastos_bot.domain.models import Extraccion
@@ -22,6 +23,7 @@ class Entrada:
     mime: str | None = None
     texto: str | None = None
     caption: str | None = None
+    fecha_referencia: date | None = None
 
     def __post_init__(self) -> None:
         if self.imagen is None and not (self.texto and self.texto.strip()):
@@ -46,3 +48,7 @@ class Extractor(Protocol):
     nombre: str  # "gemini/gemini-2.5-flash", para logs y el bake-off
 
     async def extraer(self, entrada: Entrada, categorias: Sequence[str]) -> Extraccion: ...
+
+    async def extraer_multiples(
+        self, entrada: Entrada, categorias: Sequence[str]
+    ) -> tuple[Extraccion, ...]: ...

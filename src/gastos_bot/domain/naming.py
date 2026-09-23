@@ -87,6 +87,23 @@ def nombre_archivo(
     return base + extension
 
 
+def nombre_archivo_multiple(
+    fecha_envio: date,
+    cantidad: int,
+    extension: str = ".jpg",
+    *,
+    persona: str | None = None,
+    intento: int = 1,
+) -> str:
+    """Nombre de una única imagen que respalda varios gastos del mismo lote."""
+    base = f"{fecha_envio:%Y-%m-%d}_multiple_{cantidad}-gastos"
+    if persona:
+        base += f"_{slug_comercio(persona)}"
+    if intento > 1:
+        base += f"-{intento}"
+    return base + extension
+
+
 def nombre_disponible(candidatos: set[str], generar: Callable[[int], str]) -> str:
     """Devuelve el primer nombre generar(intento) que no esté en ``candidatos``."""
     intento = 1

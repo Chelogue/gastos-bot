@@ -12,8 +12,17 @@ from typing import Any
 
 from gastos_bot.domain.models import Extraccion
 from gastos_bot.extraction.base import Entrada, ExtraccionFallida
-from gastos_bot.extraction.prompts import INSTRUCCIONES, prompt_extraccion
-from gastos_bot.extraction.schema import parsear_respuesta, schema_estricto
+from gastos_bot.extraction.prompts import (
+    INSTRUCCIONES,
+    prompt_extraccion,
+    prompt_extraccion_multiple,
+)
+from gastos_bot.extraction.schema import (
+    parsear_respuesta,
+    parsear_respuesta_multiple,
+    schema_estricto,
+    schema_multiple_estricto,
+)
 from gastos_bot.logging_setup import get_logger
 
 log = get_logger("gastos_bot.extraction.anthropic")
@@ -72,3 +81,35 @@ class AnthropicExtractor:
         if not texto:
             raise ExtraccionFallida("Claude devolvió una respuesta vacía", reintentable=False)
         return parsear_respuesta(texto, categorias)
+
+    async def extraer_multiples(
+        self, entrada: Entrada, categorias: Sequence[str]
+    ) -> tuple[Extraccion, ...]:
+        if not entrada.es_imagen:
+            return (await self.extraer(entrada, categorias),)
+        bloques = self._bloques(entrada, categorias)
+        bloques[-1] = {
+            "type": "text",
+            "text": prompt_extraccion_multiple(categorias, entrada.fecha_referencia),
+        }
+        try:
+            respuesta = await self._client.messages.create(
+                model=self.modelo,
+                max_tokens=MAX_TOKENS * 4,
+                system=INSTRUCCIONES,
+                messages=[{"role": "user", "content": bloques}],
+                output_config={
+                    "format": {"type": "json_schema", "schema": schema_multiple_estricto()}
+                },
+            )
+        except Exception as exc:
+            log.warning("anthropic_error", error=type(exc).__name__)
+            raise ExtraccionFallida(f"Claude no respondió: {type(exc).__name__}") from exc
+        if getattr(respuesta, "stop_reason", None) == "refusal":
+            raise ExtraccionFallida("Claude rechazó la imagen", reintentable=False)
+        texto = next(
+            (b.text for b in respuesta.content if getattr(b, "type", None) == "text"), None
+        )
+        if not texto:
+            raise ExtraccionFallida("Claude devolvió una respuesta vacía", reintentable=False)
+        return parsear_respuesta_multiple(texto, categorias)

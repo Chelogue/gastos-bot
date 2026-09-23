@@ -49,21 +49,23 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
 3. Como usuario, quiero **ver lo que entendió y confirmar con un toque**, o corregir categoría, monto, moneda o fecha con botones.
 4. Como usuario, quiero **registrar por texto** ("450 uyu farmacia") cuando no tengo comprobante.
 5. Como usuario, quiero que la **imagen se archive sola en Drive**, en la carpeta del mes y con mi nombre, con un nombre que diga qué es sin abrirla.
+6. Como usuario, quiero mandar una **captura con varios movimientos bancarios**, revisar cada gasto
+   y registrar todos juntos, sin repetir la carga de la misma imagen.
 
 **Consulta y corrección**
-6. Como usuario, quiero preguntar **"¿cuánto llevamos?"** y ver la quincena en curso por persona, categoría y moneda.
-7. Como usuario, quiero **ver los últimos registros y borrar o editar uno** desde el chat.
+7. Como usuario, quiero preguntar **"¿cuánto llevamos?"** y ver la quincena en curso por persona, categoría y moneda.
+8. Como usuario, quiero **ver los últimos registros y borrar o editar uno** desde el chat.
 
 **Reporte y evolución**
-8. Como pareja, queremos **recibir los días 1 y 16 un reporte** con totales por persona, categoría y moneda, y el **indicador 50/30/20**.
-9. Como pareja, queremos abrir el Sheet y **ver en la primera pestaña cómo evoluciona nuestra tasa de ahorro** mes a mes, sin armar nada a mano.
+9. Como pareja, queremos **recibir los días 1 y 16 un reporte** con totales por persona, categoría y moneda, y el **indicador 50/30/20**.
+10. Como pareja, queremos abrir el Sheet y **ver en la primera pestaña cómo evoluciona nuestra tasa de ahorro** mes a mes, sin armar nada a mano.
 
 **Casos borde**
-10. Foto que **no es un comprobante o es ilegible** → el bot lo dice y no inventa datos.
-11. **UYU vs USD ambiguo** ("$") → pregunta antes de habilitar Guardar.
-12. **Álbum de varias fotos** → un gasto por imagen.
-13. **Compra en cuotas, devolución, moneda extranjera** → ver D1–D3.
-14. **Remitente ajeno** → silencio absoluto.
+11. Foto que **no es un comprobante o es ilegible** → el bot lo dice y no inventa datos.
+12. **UYU vs USD ambiguo** ("$") → pregunta antes de habilitar Guardar.
+13. **Álbum de varias fotos** → un gasto por imagen.
+14. **Compra en cuotas, devolución, moneda extranjera** → ver D1–D3.
+15. **Remitente ajeno** → silencio absoluto.
 
 ## 6. Decisiones de producto (fugas cerradas)
 
@@ -119,6 +121,7 @@ Dos personas con permisos idénticos, identificadas por su ID de Telegram, que c
 | R23 | Gastos recurrentes (alquiler, suscripciones) creados por comando sin foto |
 | R24 | `/dashboard` que devuelve la tabla mensual resumida en el chat |
 | R25 | Al guardar, preguntar único/recurrente; periodicidad mensual, trimestral, semestral o anual; generación automática en la fecha correspondiente; aviso al creador con acciones para mantener, modificar o finalizar |
+| R26 | Capturas con múltiples movimientos: extraer de 1 a 10 gastos, revisar/editar/omitir/agregar cada uno, detectar duplicados por transacción y confirmar el lote una sola vez. La imagen se sube una vez con `multiple` en el nombre y su link se comparte entre todas las filas; después cada gasto puede marcarse como único o recurrente |
 
 ### P2 — No en v1, el diseño no debe impedirlos
 

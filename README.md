@@ -14,6 +14,7 @@ Bot de Telegram para que dos personas registren gastos con una foto, los archive
 | Lo que mandás | Lo que pasa |
 |---|---|
 | Una foto del comprobante | El modelo lee monto, moneda, fecha, comercio y propone categoría; confirmás con un toque y se archiva en Drive y en el Sheet |
+| Una captura con varios débitos | Detecta hasta 10 movimientos, los revisás uno por uno y un solo toque registra todo el lote con una imagen compartida en Drive |
 | Texto, «450 uyu farmacia» | Misma tarjeta, sin imagen (R11) |
 | `/total` o «cuánto llevamos» | Cómo viene la quincena: por persona, por categoría, por moneda y contra los topes 50/30/20 |
 | `/ultimos` | Los últimos 10 gastos con su ID |

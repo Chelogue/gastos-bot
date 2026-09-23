@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -70,7 +71,10 @@ def _extraccion(**kw: object) -> Extraccion:
 
 class Mundo:
     def __init__(
-        self, *respuestas: Extraccion | Exception, con_tc: bool = True, sheets_falla: bool = False
+        self,
+        *respuestas: Extraccion | Sequence[Extraccion] | Exception,
+        con_tc: bool = True,
+        sheets_falla: bool = False,
     ) -> None:
         self.extractor = FakeExtractor(*(respuestas or (_extraccion(),)))
         self.gastos = FakeGastosRepo(fallar_al_agregar=sheets_falla)
@@ -111,7 +115,9 @@ class Mundo:
         return abiertos[-1].pendiente_id if abiertos else ""
 
     async def toque(self, data: str, user: int = MARCELO) -> str | None:
-        mid = self.tg.enviados[0]["message_id"]
+        mid = next(
+            e["message_id"] for e in reversed(self.tg.enviados) if e.get("teclado") is not None
+        )
         return await self.flujo.procesar_callback(
             telegram_id=user, chat_id=user, message_id=mid, data=data
         )
@@ -148,6 +154,144 @@ async def test_camino_feliz_foto_a_fila() -> None:
     assert len(m.dashboard.recalculos) == 1 and m.dashboard.recalculos[0].mes == "2026-09"
     assert m.dashboard.recalculos[0].ingreso_usd == Decimal("6350.00")
     assert "✅ Guardado como G-260910-001" in m.tg.ultimo_texto
+
+
+async def test_captura_multiple_revisa_y_guarda_el_lote_con_una_sola_imagen() -> None:
+    m = Mundo(
+        [
+            _extraccion(
+                tipo_doc=TipoDocExtraido.DEBITO,
+                comercio="Ola Poke",
+                monto=Decimal("582.60"),
+                fecha=date(2026, 9, 22),
+            ),
+            _extraccion(
+                tipo_doc=TipoDocExtraido.DEBITO,
+                comercio="Ray Pinto",
+                monto=Decimal("32"),
+                fecha=date(2026, 9, 22),
+                subcategoria="Compras",
+            ),
+        ]
+    )
+    await m.foto()
+    lote = sorted(m.pendientes.pendientes.values(), key=lambda p: p.lote_indice or 0)
+    primero, segundo = lote
+    assert "Encontré 2 gastos" in m.tg.enviados[0]["texto"]
+    assert "Gasto 1 de 2" in m.tg.enviados[1]["texto"]
+    assert m.extractor.llamadas[0][0].fecha_referencia == date(2026, 9, 10)
+
+    await m.toque(f"c:{primero.pendiente_id}:s")
+    assert f"la:{primero.pendiente_id}" in m.tg.ultimo_teclado_datos()
+    await m.toque(f"g:{primero.pendiente_id}")
+    assert "Gasto 2 de 2" in m.tg.editados[-1]["texto"]
+    await m.toque(f"c:{segundo.pendiente_id}:p")
+    await m.toque(f"g:{segundo.pendiente_id}")
+    assert "Listo para registrar 2 gastos" in m.tg.editados[-1]["texto"]
+    assert m.gastos.filas == {} and m.drive.archivos == {}
+
+    assert await m.toque(f"lg:{primero.lote_id}") == msg.TOAST_OK
+    gastos = m.gastos.filas["2026-09"]
+    assert [g.id for g in gastos] == ["G-260910-001", "G-260910-002"]
+    assert [g.comercio for g in gastos] == ["Ola Poke", "Ray Pinto"]
+    assert gastos[0].compartido and not gastos[1].compartido
+    assert gastos[0].link_imagen == gastos[1].link_imagen
+    ((_, nombre, _),) = m.drive.archivos.values()
+    assert nombre == "2026-09-10_multiple_2-gastos_Marcelo.jpg"
+    assert len(m.dashboard.recalculos) == 1
+    assert all(p.estado is EstadoPendiente.GUARDADO for p in m.pendientes.pendientes.values())
+    avisos = m.tg.enviados[-2:]
+    assert [b.data for b in avisos[0]["teclado"][0]] == [
+        "u:G-260910-001",
+        "r:G-260910-001",
+    ]
+    await m.toque("r:G-260910-001")
+    await m.toque("rf:G-260910-001:mensual")
+    assert await m.recurrentes.obtener("R-260910-001") is not None
+
+
+async def test_lote_puede_aplicar_tipo_y_moneda_a_los_restantes() -> None:
+    m = Mundo(
+        [
+            _extraccion(comercio="Uno"),
+            _extraccion(comercio="Dos", moneda=MonedaExtraida.USD),
+        ]
+    )
+    await m.foto()
+    primero, segundo = sorted(m.pendientes.pendientes.values(), key=lambda p: p.lote_indice or 0)
+    await m.toque(f"c:{primero.pendiente_id}:s")
+    assert await m.toque(f"la:{primero.pendiente_id}") == msg.LOTE_COMUNES_APLICADOS
+    aplicado = m.pendientes.pendientes[segundo.pendiente_id]
+    assert aplicado.compartido and aplicado.moneda is Moneda.UYU
+    await m.toque(f"g:{primero.pendiente_id}")
+    assert "Gasto 2 de 2" in m.tg.editados[-1]["texto"]
+    assert "👥 Compartido" in m.tg.editados[-1]["texto"]
+
+
+async def test_lote_permite_omitir_agregar_y_corregir_comercio() -> None:
+    m = Mundo([_extraccion(comercio="Mal leído"), _extraccion(comercio="Farmacia")])
+    await m.foto()
+    primero, segundo = sorted(m.pendientes.pendientes.values(), key=lambda p: p.lote_indice or 0)
+    await m.toque(f"d:{primero.pendiente_id}")
+    await m.toque(f"c:{segundo.pendiente_id}:s")
+    await m.toque(f"g:{segundo.pendiente_id}")
+    assert "Omitidos: 1" in m.tg.editados[-1]["texto"]
+
+    await m.toque(f"l+:{primero.lote_id}")
+    nuevo = max(m.pendientes.pendientes.values(), key=lambda p: p.lote_indice or 0)
+    assert nuevo.lote_indice == 3 and nuevo.lote_total == 3
+    await m.toque(f"c:{nuevo.pendiente_id}:p")
+    await m.toque(f"mc:{nuevo.pendiente_id}:UYU")
+    await m.toque(f"m:{nuevo.pendiente_id}")
+    await m.texto("840")
+    await m.toque(f"co:{nuevo.pendiente_id}")
+    await m.texto("Farmacia Central")
+    await m.toque(f"k:{nuevo.pendiente_id}")
+    indice_salud = Catalogo.inicial().nombres_activos().index("Salud")
+    await m.toque(f"kc:{nuevo.pendiente_id}:{indice_salud}")
+    await m.toque(f"g:{nuevo.pendiente_id}")
+    assert "Listo para registrar 2 gastos" in m.tg.editados[-1]["texto"]
+
+    await m.toque(f"lg:{primero.lote_id}")
+    gastos = m.gastos.filas["2026-09"]
+    assert [g.comercio for g in gastos] == ["Farmacia", "Farmacia Central"]
+    assert gastos[1].monto == Decimal("840") and gastos[1].fecha_gasto == date(2026, 9, 10)
+
+
+async def test_lote_detecta_duplicado_antes_de_la_confirmacion_final() -> None:
+    m = Mundo(
+        _extraccion(),
+        [_extraccion(), _extraccion(comercio="Farmacia", monto=Decimal("300"))],
+    )
+    pid = await m.foto(update_id=1)
+    await m.toque(f"c:{pid}:s")
+    await m.toque(f"g:{pid}")
+
+    await m.foto(update_id=2)
+    lote = sorted(
+        (p for p in m.pendientes.pendientes.values() if p.lote_id),
+        key=lambda p: p.lote_indice or 0,
+    )
+    await m.toque(f"c:{lote[0].pendiente_id}:s")
+    assert await m.toque(f"g:{lote[0].pendiente_id}") == msg.TOAST_DUPLICADO
+    assert [b.data for f in m.tg.editados[-1]["teclado"] for b in f] == [
+        f"gi:{lote[0].pendiente_id}",
+        f"d:{lote[0].pendiente_id}",
+    ]
+    await m.toque(f"d:{lote[0].pendiente_id}")
+    assert "Gasto 2 de 2" in m.tg.editados[-1]["texto"]
+
+
+async def test_lote_hace_rollback_de_la_unica_imagen_si_falla_sheets() -> None:
+    m = Mundo([_extraccion(), _extraccion(comercio="Farmacia")], sheets_falla=True)
+    await m.foto()
+    lote = sorted(m.pendientes.pendientes.values(), key=lambda p: p.lote_indice or 0)
+    for pendiente in lote:
+        await m.toque(f"c:{pendiente.pendiente_id}:s")
+        await m.toque(f"g:{pendiente.pendiente_id}")
+    toast = await m.toque(f"lg:{lote[0].lote_id}")
+    assert toast is not None and "No pude guardar" in toast
+    assert m.drive.archivos == {} and m.gastos.filas == {}
 
 
 async def test_update_duplicado_no_reprocesa() -> None:
