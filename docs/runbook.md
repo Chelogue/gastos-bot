@@ -78,10 +78,21 @@ veces; después se dispara a mano con `gcloud scheduler jobs run gastos-bot-repo
 Si cambió la URL del servicio, actualizá la variable de repo `CLOUD_RUN_URL`, redesplegá y volvé a
 correr `infra/setup_scheduler.sh` (la audiencia tiene que coincidir).
 
-## Reautorizar Google (Drive/Sheets dejan de responder con 401/invalid_grant)
+## OAuth de Google (Drive/Sheets dejan de responder con 401/invalid_grant)
 
-El bot usa el token OAuth de Marcelo (ADR 0006). Se invalida si cambia la contraseña, si quita
-el acceso en https://myaccount.google.com/permissions o si Google lo expira. Para renovarlo:
+El bot usa el token OAuth de Marcelo (ADR 0006). Si los logs muestran
+`invalid_grant: Token has been expired or revoked`, primero revisá Google Auth Platform →
+Audiencia: una app externa en estado **Testing** expira sus refresh tokens a los 7 días cuando
+pide scopes de Drive o Sheets. Cambiá el estado a **In production** antes de reautorizar. Con los
+scopes actuales, una app publicada y no verificada muestra una advertencia de Google y tiene un
+límite acumulado de 100 usuarios. Para el uso personal con Marcelo como único usuario OAuth, aplica
+la excepción de uso personal; no iniciar la verificación formal salvo que se abra el acceso al
+público.
+La verificación de scopes restringidos puede requerir una evaluación de seguridad de terceros.
+No alcanza con renovar el token mientras la app siga en Testing.
+
+Una vez que la app esté en producción, reautorizá si Marcelo cambió la contraseña, quitó el acceso
+en https://myaccount.google.com/permissions o Google invalidó el token por otro motivo:
 
 ```bash
 uv run python scripts/autorizar_google.py --client-id "$GOOGLE_OAUTH_CLIENT_ID" --client-secret "$GOOGLE_OAUTH_CLIENT_SECRET"
@@ -89,7 +100,9 @@ grep '^GOOGLE_OAUTH_TOKEN_JSON=' .env | cut -d= -f2- | gcloud secrets versions a
 ```
 
 Después, un redeploy (push a `main` o "Re-run" del workflow Deploy) para que Cloud Run tome la
-versión nueva del secreto. El cliente OAuth está en Google Auth Platform → Clientes.
+versión nueva del secreto. El cliente OAuth está en Google Auth Platform → Clientes. El token
+de prueba se vence aunque se vuelva a autorizar; confirmar en Audience que el estado sea In
+production.
 
 ## Rotar tokens
 

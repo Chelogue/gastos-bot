@@ -6,7 +6,12 @@ Clientes). Uso:
     uv run python scripts/autorizar_google.py --client-id X --client-secret Y
 
 Abre el navegador, pide permiso para Drive y Sheets, y guarda el resultado en .env como
-GOOGLE_OAUTH_TOKEN_JSON (una sola línea). Después, para producción:
+GOOGLE_OAUTH_TOKEN_JSON (una sola línea).
+
+La audiencia OAuth debe estar en estado "In production" antes de autorizar. En estado
+"Testing", Google hace expirar el refresh token a los 7 días para estos scopes.
+
+Después, para producción:
 
     grep '^GOOGLE_OAUTH_TOKEN_JSON=' .env | cut -d= -f2- | \\
       gcloud secrets versions add GOOGLE_OAUTH_TOKEN_JSON --data-file=- --project <PROJECT_ID>

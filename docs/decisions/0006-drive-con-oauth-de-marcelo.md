@@ -21,7 +21,9 @@ son de Marcelo, contra su cuota de 15 GB, en `Bot Finanzas/YYYY-MM/<Nombre>/`.
 
 ## Consecuencias
 Cero costo y las imágenes visibles como cualquier archivo de Drive. A cambio, un token de Marcelo
-vive en Secret Manager: si cambia la contraseña o revoca el acceso, hay que reautorizar (runbook).
-La app OAuth queda en modo "prueba" con Marcelo como usuario de prueba; en ese modo Google no
-expira los refresh tokens si la app está marcada como externa con usuarios de prueba… salvo que
-cambie la política: si un día el token deja de servir, la solución es la misma, reautorizar.
+vive en Secret Manager. La app OAuth no puede quedar en estado "Testing": Google expira a los
+7 días los refresh tokens de apps externas en pruebas cuando piden scopes como Drive o Sheets.
+Debe publicarse como "In production" antes de autorizar el token de producción. Si cambia la
+contraseña, Marcelo revoca el acceso o Google invalida el token por otro motivo, hay que
+reautorizarlo (runbook). La política de expiración de Google es la causa de la caída del
+2026-09-27; el token autorizado el 2026-09-10 expiró después de más de siete días.
